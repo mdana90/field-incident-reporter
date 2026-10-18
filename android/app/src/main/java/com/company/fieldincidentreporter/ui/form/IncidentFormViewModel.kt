@@ -31,7 +31,19 @@ data class FormPhoto(val id: String? = null, val url: String? = null, val localF
 }
 
 @Serializable
-private data class SavedFormPhoto(val id: String? = null, val url: String? = null, val path: String? = null)
+internal data class SavedFormPhoto(val id: String? = null, val url: String? = null, val path: String? = null)
+
+/** Unsaved form edits kept in [SavedStateHandle] under one key so they survive process death. */
+@Serializable
+internal data class SavedForm(
+    val title: String,
+    val description: String,
+    val severity: Severity?,
+    val location: String,
+    val photos: List<SavedFormPhoto>,
+    val dirty: Boolean,
+    val stored: Boolean,
+)
 
 data class FormUiState(
     val title: String = "",
@@ -73,14 +85,18 @@ class IncidentFormViewModel @Inject constructor(
     private val drafts: DraftReports,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    val editId = savedStateHandle.get<String>("id")?.takeIf(String::isNotBlank)
-    val draftId = savedStateHandle.get<String>("draftId")?.takeIf(String::isNotBlank)
-    private val hadRequestId = !savedStateHandle.get<String>("clientRequestId").isNullOrBlank()
-    private val requestId: String = draftId ?: savedStateHandle["clientRequestId"]
-        ?: UUID.randomUUID().toString().also { savedStateHandle["clientRequestId"] = it }
-    private val persistedDraftId = draftId ?: if (savedStateHandle.get<Boolean>("draftStored") == true) requestId else null
+    // FormRoute args are read by key rather than toRoute(), which needs Robolectric in JVM tests.
+    val editId = savedStateHandle.get<String>(KEY_EDIT_ID)?.takeIf(String::isNotBlank)
+    val draftId = savedStateHandle.get<String>(KEY_DRAFT_ID)?.takeIf(String::isNotBlank)
+    private val hadRequestId = !savedStateHandle.get<String>(KEY_REQUEST_ID).isNullOrBlank()
+    private val requestId: String = draftId ?: savedStateHandle[KEY_REQUEST_ID]
+        ?: UUID.randomUUID().toString().also { savedStateHandle[KEY_REQUEST_ID] = it }
+    private val savedForm: SavedForm? = savedStateHandle.get<String>(KEY_FORM)?.let {
+        runCatching { Json.decodeFromString<SavedForm>(it) }.getOrNull()
+    }
+    private val persistedDraftId = draftId ?: if (savedForm?.stored == true) requestId else null
     private val shouldCheckDraft = editId == null && (draftId != null || hadRequestId)
-    private val restored = restoreForm()
+    private val restored = savedForm?.toUiState()
     private var savedInput: ReportInput? = null
     private val _state = MutableStateFlow((restored ?: FormUiState()).copy(
         loading = if (editId != null) restored == null else shouldCheckDraft,
@@ -120,7 +136,7 @@ class IncidentFormViewModel @Inject constructor(
         } else {
             _state.value.photos.mapNotNull(FormPhoto::localFile).filterNot { it in retained }.forEach(photoStorage::deletePhoto)
         }
-        savedStateHandle["draftExists"] = false
+        savedStateHandle.remove<String>(KEY_FORM)
     }
 
     fun showError(message: String) = _state.update { it.copy(error = message) }
@@ -298,7 +314,6 @@ class IncidentFormViewModel @Inject constructor(
                     return
                 }
                 savedInput = null
-                savedStateHandle["draftExists"] = false
                 _state.update { it.copy(saving = false, savedId = result.data.id, dirty = false) }
             }
             is Result.Error -> if ((result.exception as? HttpException)?.code() in listOf(400, 413, 422)) {
@@ -326,42 +341,35 @@ class IncidentFormViewModel @Inject constructor(
     private fun persistForm() {
         val form = _state.value
         if (form.savedId != null) {
-            savedStateHandle["draftExists"] = false
-            savedStateHandle["draftStored"] = false
+            savedStateHandle.remove<String>(KEY_FORM)
             return
         }
-        savedStateHandle["draftTitle"] = form.title
-        savedStateHandle["draftDescription"] = form.description
-        savedStateHandle["draftSeverity"] = form.severity?.name
-        savedStateHandle["draftLocation"] = form.location
-        savedStateHandle["draftPhotos"] = Json.encodeToString(form.photos.map {
-            SavedFormPhoto(id = it.id, url = it.url, path = it.localFile?.absolutePath)
-        })
-        savedStateHandle["draftDirty"] = form.dirty
-        savedStateHandle["draftSavedId"] = form.savedId
-        savedStateHandle["draftStored"] = savedInput != null
-        savedStateHandle["draftExists"] = true
-    }
-
-    private fun restoreForm(): FormUiState? {
-        if (savedStateHandle.get<Boolean>("draftExists") != true) return null
-        val photos = runCatching {
-            Json.decodeFromString<List<SavedFormPhoto>>(savedStateHandle.get<String>("draftPhotos") ?: "[]")
-        }.getOrDefault(emptyList()).map { FormPhoto(it.id, it.url, it.path?.let(::File)) }
-        val severity = savedStateHandle.get<String>("draftSeverity")?.let { name ->
-            Severity.entries.firstOrNull { it.name == name }
-        }
-        return FormUiState(
-            title = savedStateHandle["draftTitle"] ?: "",
-            description = savedStateHandle["draftDescription"] ?: "",
-            severity = severity, location = savedStateHandle["draftLocation"] ?: "",
-            photos = photos, dirty = savedStateHandle["draftDirty"] ?: false,
-            savedId = savedStateHandle["draftSavedId"],
-            hasSavedDraft = savedStateHandle["draftStored"] ?: false,
-        )
+        savedStateHandle[KEY_FORM] = Json.encodeToString(SavedForm(
+            title = form.title,
+            description = form.description,
+            severity = form.severity,
+            location = form.location,
+            photos = form.photos.map { SavedFormPhoto(id = it.id, url = it.url, path = it.localFile?.absolutePath) },
+            dirty = form.dirty,
+            stored = savedInput != null,
+        ))
     }
 
     companion object {
+        internal const val KEY_EDIT_ID = "id"
+        internal const val KEY_DRAFT_ID = "draftId"
+        internal const val KEY_REQUEST_ID = "clientRequestId"
+        internal const val KEY_FORM = "form"
         private const val DEVICE_SAVE_ERROR = "Could not save the report on this device. Try again."
     }
 }
+
+private fun SavedForm.toUiState() = FormUiState(
+    title = title,
+    description = description,
+    severity = severity,
+    location = location,
+    photos = photos.map { FormPhoto(it.id, it.url, it.path?.let(::File)) },
+    dirty = dirty,
+    hasSavedDraft = stored,
+)

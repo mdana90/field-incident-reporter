@@ -5,6 +5,12 @@ import com.company.fieldincidentreporter.data.ReportInput
 import com.company.fieldincidentreporter.data.offline.DraftState
 import com.company.fieldincidentreporter.model.Severity
 import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel
+import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel.Companion.KEY_DRAFT_ID
+import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel.Companion.KEY_EDIT_ID
+import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel.Companion.KEY_FORM
+import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel.Companion.KEY_REQUEST_ID
+import com.company.fieldincidentreporter.ui.form.SavedForm
+import com.company.fieldincidentreporter.ui.form.SavedFormPhoto
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +47,7 @@ class IncidentFormViewModelTest {
     @Test fun invalidFormBlocksSaveAndSend() = runTest(dispatcher) {
         val repository = FakeIncidentRepository()
         val drafts = FakeDraftReports()
-        val form = viewModel(SavedStateHandle(mapOf("id" to "")), repository, drafts)
+        val form = viewModel(SavedStateHandle(mapOf(KEY_EDIT_ID to "")), repository, drafts)
 
         form.saveDraft()
         form.sendReport()
@@ -58,7 +64,7 @@ class IncidentFormViewModelTest {
         val saved = photo("saved.jpg")
         val removed = photo("removed.jpg")
         drafts.save(input(listOf(saved)), DraftState.DRAFT)
-        val form = viewModel(SavedStateHandle(mapOf("draftId" to "stable-request-id")), drafts = drafts)
+        val form = viewModel(SavedStateHandle(mapOf(KEY_DRAFT_ID to "stable-request-id")), drafts = drafts)
         advanceUntilIdle()
         assertEquals(listOf(saved), form.state.value.photos.mapNotNull { it.localFile })
 
@@ -92,7 +98,7 @@ class IncidentFormViewModelTest {
         val original = photo("original.jpg")
         val replacement = photo("replacement.jpg")
         drafts.save(input(listOf(original)), DraftState.DRAFT)
-        val form = viewModel(SavedStateHandle(mapOf("draftId" to "stable-request-id")), drafts = drafts)
+        val form = viewModel(SavedStateHandle(mapOf(KEY_DRAFT_ID to "stable-request-id")), drafts = drafts)
         advanceUntilIdle()
 
         form.removePhoto(original.absolutePath)
@@ -138,10 +144,10 @@ class IncidentFormViewModelTest {
         first.sendReport()
         runCurrent()
         assertEquals(DraftState.UNCONFIRMED, drafts.stored("stable-request-id")?.state)
-        assertEquals(true, handle.get<Boolean>("draftStored"))
+        assertTrue(savedForm(handle).stored)
 
         val staleHandle = SavedStateHandle(handle.keys().associateWith { handle.get<Any?>(it) })
-        staleHandle["draftStored"] = false
+        staleHandle[KEY_FORM] = Json.encodeToString(savedForm(handle).copy(stored = false))
         val restored = viewModel(staleHandle, repository, drafts)
         runCurrent()
         assertTrue(restored.state.value.unconfirmed)
@@ -180,7 +186,7 @@ class IncidentFormViewModelTest {
         val payload = input(listOf(photo("retry.jpg")))
         drafts.save(payload, DraftState.UNCONFIRMED)
         val repository = FakeIncidentRepository()
-        val form = viewModel(SavedStateHandle(mapOf("draftId" to "stable-request-id")), repository, drafts)
+        val form = viewModel(SavedStateHandle(mapOf(KEY_DRAFT_ID to "stable-request-id")), repository, drafts)
         advanceUntilIdle()
 
         form.title("Unsent edit")
@@ -230,7 +236,7 @@ class IncidentFormViewModelTest {
         drafts.save(input(listOf(missing)), DraftState.UNCONFIRMED)
         missing.delete()
         val repository = FakeIncidentRepository()
-        val form = viewModel(SavedStateHandle(mapOf("draftId" to "stable-request-id")), repository, drafts)
+        val form = viewModel(SavedStateHandle(mapOf(KEY_DRAFT_ID to "stable-request-id")), repository, drafts)
         advanceUntilIdle()
 
         form.sendReport()
@@ -245,7 +251,7 @@ class IncidentFormViewModelTest {
         val photo = photo("saved-during-load-error.jpg")
         photoStore.onDeleteDraft = { photo.delete() }
         val drafts = FakeDraftReports().apply { getFailure = IOException("database unavailable") }
-        val form = viewModel(SavedStateHandle(mapOf("draftId" to "stable-request-id")), drafts = drafts)
+        val form = viewModel(SavedStateHandle(mapOf(KEY_DRAFT_ID to "stable-request-id")), drafts = drafts)
         form.discardChanges()
         assertTrue(photo.exists())
         assertTrue(photoStore.deletedDrafts.isEmpty())
@@ -286,7 +292,7 @@ class IncidentFormViewModelTest {
 
     @Test fun cancelledCameraCaptureDeletesItsFile() = runTest(dispatcher) {
         val photo = photo("cancelled.jpg")
-        val form = viewModel(SavedStateHandle(mapOf("id" to "")))
+        val form = viewModel(SavedStateHandle(mapOf(KEY_EDIT_ID to "")))
         form.cameraResult(photo.absolutePath, false)
         assertFalse(photo.exists())
     }
@@ -306,15 +312,18 @@ class IncidentFormViewModelTest {
 
     private fun draftHandle(editId: String = ""): SavedStateHandle {
         val photo = photo("photo-${files.root.listFiles()?.size}.jpg")
-        val photos = mutableListOf(mapOf("path" to photo.absolutePath))
-        if (editId.isNotBlank()) photos += mapOf("id" to "kept-photo", "url" to "/uploads/kept-photo.jpg")
+        val photos = mutableListOf(SavedFormPhoto(path = photo.absolutePath))
+        if (editId.isNotBlank()) photos += SavedFormPhoto(id = "kept-photo", url = "/uploads/kept-photo.jpg")
+        val form = SavedForm(
+            title = "Pipe", description = "Leaking", severity = Severity.HIGH, location = "Building A",
+            photos = photos, dirty = true, stored = false,
+        )
         return SavedStateHandle(mapOf(
-            "id" to editId, "clientRequestId" to "stable-request-id",
-            "draftExists" to true, "draftTitle" to "Pipe", "draftDescription" to "Leaking",
-            "draftSeverity" to "HIGH", "draftLocation" to "Building A",
-            "draftPhotos" to Json.encodeToString(photos), "draftDirty" to true,
+            KEY_EDIT_ID to editId, KEY_REQUEST_ID to "stable-request-id", KEY_FORM to Json.encodeToString(form),
         ))
     }
+
+    private fun savedForm(handle: SavedStateHandle) = Json.decodeFromString<SavedForm>(handle.get<String>(KEY_FORM)!!)
 
     private fun httpFailure(code: Int) = HttpException(Response.error<Any>(code, "failure".toResponseBody()))
 }
