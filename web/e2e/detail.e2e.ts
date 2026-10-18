@@ -97,3 +97,33 @@ test('HEIC photos fall back to an Open file link', async ({ page }) => {
   await expect(page.getByText('Preview not available')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open file' })).toHaveAttribute('href', /\.heic$/);
 });
+
+test('the form is locked while a save is in flight', async ({ page }) => {
+  const incident = await report({ title: unique('Pending save') });
+  await page.goto(`/incidents/${incident.id}`);
+  // Hold the Server Action request so the save stays pending.
+  await page.route(`**/incidents/${incident.id}`, async (route) => {
+    if (route.request().method() === 'POST') await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  await status(page).selectOption('IN_PROGRESS');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByRole('button', { name: 'Saving…' })).toBeVisible();
+  await expect(note(page)).toBeDisabled();
+  await expect(severity(page)).toBeDisabled();
+  await expect(page.getByText('Changes saved.')).toBeVisible();
+  await expect(status(page)).toHaveValue('IN_PROGRESS');
+  await expect(note(page)).toBeEnabled();
+});
+
+test('gallery stays consistent when photos are removed elsewhere', async ({ page }) => {
+  const incident = await report({ title: unique('Shrinking gallery'), photos: 3 });
+  await page.goto(`/incidents/${incident.id}`);
+  await page.getByRole('button', { name: 'Show photo 3' }).click();
+  await expect(page.getByText('3 / 3 photos')).toBeVisible();
+  await editOnAndroid(incident, { keepPhotos: 1 });
+  await save(page).click(); // the save re-renders the page with the new photo list
+  await expect(page.getByText('Changes saved.')).toBeVisible();
+  await expect(page.getByText('1 / 1 photo')).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Incident photo 1' })).toBeVisible();
+});

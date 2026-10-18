@@ -1,16 +1,20 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { queueHref, SEVERITIES, SEVERITY_LABEL, STATUS_LABEL, STATUSES, type QueueQuery } from '@/lib/incidents';
 
-const control = 'min-h-[39px] rounded-lg border border-[#d7e1df] bg-white px-[11px] text-[11px] font-bold text-[#496167]';
+// Layout and colours are separate: Tailwind's CSS order, not class order, decides which of two colours wins.
+const controlBase = 'min-h-[39px] rounded-lg border px-[11px] text-[11px] font-bold disabled:opacity-70';
+const control = `${controlBase} border-[#d7e1df] bg-white text-[#496167]`;
 
 export function QueueToolbar({ query }: { query: QueueQuery }) {
   const router = useRouter();
   const [draft, setDraft] = useState(query.q);
   const lastPushed = useRef(query.q);
-  const go = (patch: Partial<QueueQuery>) => router.replace(queueHref(query, patch), { scroll: false });
+  // Each change builds on the current URL, so controls stay disabled until the previous navigation lands.
+  const [navigating, startNavigation] = useTransition();
+  const go = (patch: Partial<QueueQuery>) => startNavigation(() => router.replace(queueHref(query, patch), { scroll: false }));
 
   // Push the search after typing pauses. Cleanup cancels a pending push when the draft or other filters change.
   useEffect(() => {
@@ -18,7 +22,7 @@ export function QueueToolbar({ query }: { query: QueueQuery }) {
     if (q === query.q) return;
     const timer = setTimeout(() => {
       lastPushed.current = q;
-      router.replace(queueHref(query, { q }), { scroll: false });
+      startNavigation(() => router.replace(queueHref(query, { q }), { scroll: false }));
     }, 300);
     return () => clearTimeout(timer);
   }, [draft, query, router]);
@@ -49,24 +53,25 @@ export function QueueToolbar({ query }: { query: QueueQuery }) {
           className="w-full bg-transparent text-[#304b51] outline-none placeholder:text-[#93a2a4]"
         />
       </label>
-      <select aria-label="Status" className={control} value={query.status} onChange={(event) => go({ status: event.target.value as QueueQuery['status'] })}>
+      <select aria-label="Status" disabled={navigating} className={control} value={query.status} onChange={(event) => go({ status: event.target.value as QueueQuery['status'] })}>
         <option value="ACTIVE">Status: Active</option>
         {STATUSES.map((status) => <option key={status} value={status}>Status: {STATUS_LABEL[status]}</option>)}
         <option value="ALL">Status: All</option>
       </select>
-      <select aria-label="Severity" className={control} value={query.severity} onChange={(event) => go({ severity: event.target.value as QueueQuery['severity'] })}>
+      <select aria-label="Severity" disabled={navigating} className={control} value={query.severity} onChange={(event) => go({ severity: event.target.value as QueueQuery['severity'] })}>
         <option value="ALL">Severity: All</option>
         {[...SEVERITIES].reverse().map((severity) => <option key={severity} value={severity}>Severity: {SEVERITY_LABEL[severity]}</option>)}
       </select>
       <button
         type="button"
+        disabled={navigating}
         aria-pressed={criticalOnly}
         onClick={() => go({ severity: criticalOnly ? 'ALL' : 'CRITICAL' })}
-        className={`${control} ${criticalOnly ? 'border-[#a8362e] bg-[#a8362e] text-white' : 'border-[#e8bdb6] bg-[#fff5f2] text-[#9d352b]'}`}
+        className={`${controlBase} ${criticalOnly ? 'border-[#a8362e] bg-[#a8362e] text-white' : 'border-[#e8bdb6] bg-[#fff5f2] text-[#9d352b]'}`}
       >
         Critical only
       </button>
-      <select aria-label="Sort" className={`${control} border-transparent bg-transparent font-normal text-[#718589] sm:ml-auto`} value={query.sort} onChange={(event) => go({ sort: event.target.value as QueueQuery['sort'] })}>
+      <select aria-label="Sort" disabled={navigating} className={`${controlBase} border-transparent bg-transparent font-normal text-[#718589] sm:ml-auto`} value={query.sort} onChange={(event) => go({ sort: event.target.value as QueueQuery['sort'] })}>
         <option value="severity">Sort: Highest severity first</option>
         <option value="newest">Sort: Newest first</option>
       </select>

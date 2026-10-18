@@ -5,8 +5,10 @@ import { useState } from 'react';
 type GalleryPhoto = { id: string; src: string; previewable: boolean };
 
 export function PhotoGallery({ photos }: { photos: GalleryPhoto[] }) {
-  const [index, setIndex] = useState(0);
-  const current = photos[Math.min(index, photos.length - 1)];
+  const [selected, setSelected] = useState(0);
+  // Photos can be removed elsewhere while this state is kept; never point past the end.
+  const index = Math.min(selected, photos.length - 1);
+  const current = photos[index];
   if (!current) return null;
 
   return (
@@ -33,7 +35,7 @@ export function PhotoGallery({ photos }: { photos: GalleryPhoto[] }) {
             <button
               key={photo.id}
               type="button"
-              onClick={() => setIndex(position)}
+              onClick={() => setSelected(position)}
               aria-label={`Show photo ${position + 1}`}
               aria-current={position === index}
               className={`size-12 overflow-hidden rounded-lg border-2 bg-[#dfe7e5] ${position === index ? 'border-teal' : 'border-transparent'}`}

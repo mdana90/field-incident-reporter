@@ -19,9 +19,10 @@ export async function report({ title, severity = 'HIGH', location = 'Building A'
 }
 
 // Same request the Android edit screen sends.
-export async function editOnAndroid(incident: Incident, changes: { severity: Severity }) {
+export async function editOnAndroid(incident: Incident, { severity = incident.severity, keepPhotos = incident.photos.length }: { severity?: Severity; keepPhotos?: number }) {
   const form = new FormData();
-  const fields = { title: incident.title, description: incident.description, location: incident.location, ...changes, keepPhotoIds: JSON.stringify(incident.photos.map((photo) => photo.id)) };
+  const keepPhotoIds = JSON.stringify(incident.photos.slice(0, keepPhotos).map((photo) => photo.id));
+  const fields = { title: incident.title, description: incident.description, location: incident.location, severity, keepPhotoIds };
   for (const [key, value] of Object.entries(fields)) form.append(key, value);
   await fetch(`${API_URL}/incidents/${incident.id}`, { method: 'PUT', body: form });
 }

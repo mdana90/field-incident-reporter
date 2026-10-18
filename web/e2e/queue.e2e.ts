@@ -56,3 +56,31 @@ test('invalid URL params fall back to the default view', async ({ page }) => {
   await expect(page.getByRole('combobox', { name: 'Severity' })).toHaveValue('ALL');
   await expect(page.locator('tbody tr').first()).toBeVisible();
 });
+
+test('quick successive filter changes keep every selection', async ({ page }) => {
+  await page.goto('/incidents');
+  // Slow down the server render for each navigation, as on a slow network.
+  await page.route('**/incidents?*', async (route) => {
+    if (route.request().headers()['rsc']) await new Promise((resolve) => setTimeout(resolve, 800));
+    await route.continue();
+  });
+  await page.getByRole('combobox', { name: 'Status' }).selectOption('ALL');
+  await page.getByRole('combobox', { name: 'Severity' }).selectOption('HIGH');
+  await page.getByRole('combobox', { name: 'Sort' }).selectOption('newest');
+  await expect(page).toHaveURL(/sort=newest/);
+  await expect(page).toHaveURL(/status=ALL/);
+  await expect(page).toHaveURL(/severity=HIGH/);
+});
+
+test('Critical only stays readable when pressed', async ({ page }) => {
+  await page.goto('/incidents');
+  const button = page.getByRole('button', { name: 'Critical only' });
+  await button.click();
+  await expect(button).toHaveAttribute('aria-pressed', 'true');
+  await expect(button).toHaveCSS('background-color', 'rgb(168, 54, 46)');
+  await expect(button).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await button.click();
+  await expect(button).toHaveAttribute('aria-pressed', 'false');
+  await expect(button).toHaveCSS('background-color', 'rgb(255, 245, 242)');
+  await expect(button).toHaveCSS('color', 'rgb(157, 53, 43)');
+});
