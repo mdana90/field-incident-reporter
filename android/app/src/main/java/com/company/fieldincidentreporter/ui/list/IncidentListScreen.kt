@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -43,6 +44,7 @@ import com.company.fieldincidentreporter.model.Incident
 import com.company.fieldincidentreporter.data.offline.DeliveryState
 import com.company.fieldincidentreporter.data.offline.PendingReport
 import com.company.fieldincidentreporter.ui.imageUrl
+import com.company.fieldincidentreporter.ui.incidentLocalDate
 import com.company.fieldincidentreporter.ui.theme.Amber
 import com.company.fieldincidentreporter.ui.theme.TealSoft
 
@@ -152,6 +154,7 @@ private fun PendingCard(report: PendingReport, onRetry: () -> Unit, onDiscard: (
 
 @Composable
 private fun IncidentCard(incident: Incident, onClick: () -> Unit) {
+    val context = LocalContext.current
     Card(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
@@ -181,7 +184,7 @@ private fun IncidentCard(incident: Incident, onClick: () -> Unit) {
                     style = MaterialTheme.typography.labelMedium,
                 )
                 Spacer(Modifier.width(10.dp))
-                Text(incident.createdAt.take(10), style = MaterialTheme.typography.labelSmall)
+                Text(incidentLocalDate(incident.createdAt, context), style = MaterialTheme.typography.labelSmall)
             }
             Spacer(Modifier.height(7.dp))
             Text("⌖  ${incident.location}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
