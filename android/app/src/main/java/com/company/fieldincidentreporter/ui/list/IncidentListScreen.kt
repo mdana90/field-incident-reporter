@@ -27,6 +27,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -84,57 +85,69 @@ fun IncidentListScreen(
             ) { Text("+  Report incident") }
         },
     ) { padding ->
-        when {
-            state.loading && state.incidents.isEmpty() && state.drafts.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-            state.error != null && state.incidents.isEmpty() && state.drafts.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-                    Text(state.error.orEmpty())
-                    Spacer(Modifier.height(8.dp))
-                    Button(onClick = viewModel::refresh) { Text("Retry") }
-                }
-            }
-            state.incidents.isEmpty() && state.drafts.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-                    Text("No reports yet", style = MaterialTheme.typography.headlineSmall)
-                    Spacer(Modifier.height(8.dp))
-                    Text("Capture an issue to start your field reports.")
-                    if (state.draftError != null) Text(state.draftError.orEmpty(), color = MaterialTheme.colorScheme.error)
-                    Spacer(Modifier.height(16.dp))
-                    Button(onClick = onCreate) { Text("Report incident") }
-                }
-            }
-            else -> LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
+        PullToRefreshBox(
+            isRefreshing = state.refreshing,
+            onRefresh = { viewModel.refresh(fromPull = true) },
+            modifier = Modifier.fillMaxSize().padding(padding),
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item {
-                    Column(modifier = Modifier.padding(bottom = 8.dp)) {
-                        Text("Your field reports", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        if (state.error != null) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                                TextButton(onClick = viewModel::refresh) { Text("Retry") }
+                when {
+                    state.loading && !state.refreshing && state.incidents.isEmpty() && state.drafts.isEmpty() -> item {
+                        Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    }
+                    state.error != null && state.incidents.isEmpty() && state.drafts.isEmpty() -> item {
+                        Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+                                Text(state.error.orEmpty())
+                                Spacer(Modifier.height(8.dp))
+                                Button(onClick = { viewModel.refresh() }) { Text("Retry") }
                             }
                         }
-                        if (state.draftError != null) Text(state.draftError.orEmpty(), color = MaterialTheme.colorScheme.error)
                     }
-                }
-                if (state.drafts.isNotEmpty()) {
-                    item { Text("Saved drafts · manual send required", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
-                    items(state.drafts, key = { "draft-${it.id}" }) { report ->
-                        DraftCard(
-                            report = report,
-                            onOpen = { onOpenDraft(report.id) },
-                            onDelete = { deleting = report },
-                        )
+                    state.incidents.isEmpty() && state.drafts.isEmpty() -> item {
+                        Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+                                Text("No reports yet", style = MaterialTheme.typography.headlineSmall)
+                                Spacer(Modifier.height(8.dp))
+                                Text("Capture an issue to start your field reports.")
+                                if (state.draftError != null) Text(state.draftError.orEmpty(), color = MaterialTheme.colorScheme.error)
+                                Spacer(Modifier.height(16.dp))
+                                Button(onClick = onCreate) { Text("Report incident") }
+                            }
+                        }
                     }
-                }
-                item { Text("Submitted incidents", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
-                items(state.incidents, key = Incident::id) { incident ->
-                    IncidentCard(incident = incident, onClick = { onOpen(incident.id) })
+                    else -> {
+                        item {
+                            Column(modifier = Modifier.padding(bottom = 8.dp)) {
+                                Text("Your field reports", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                                if (state.error != null) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error)
+                                        TextButton(onClick = { viewModel.refresh() }) { Text("Retry") }
+                                    }
+                                }
+                                if (state.draftError != null) Text(state.draftError.orEmpty(), color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                        if (state.drafts.isNotEmpty()) {
+                            item { Text("Saved drafts · manual send required", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+                            items(state.drafts, key = { "draft-${it.id}" }) { report ->
+                                DraftCard(
+                                    report = report,
+                                    onOpen = { onOpenDraft(report.id) },
+                                    onDelete = { deleting = report },
+                                )
+                            }
+                        }
+                        item { Text("Submitted incidents", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+                        items(state.incidents, key = Incident::id) { incident ->
+                            IncidentCard(incident = incident, onClick = { onOpen(incident.id) })
+                        }
+                    }
                 }
             }
         }

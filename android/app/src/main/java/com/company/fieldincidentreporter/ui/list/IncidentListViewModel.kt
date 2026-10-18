@@ -11,6 +11,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import java.util.logging.Logger
 import java.util.logging.Level
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +22,7 @@ data class ListUiState(
     val incidents: List<Incident> = emptyList(),
     val drafts: List<DraftReport> = emptyList(),
     val loading: Boolean = true,
+    val refreshing: Boolean = false,
     val error: String? = null,
     val draftError: String? = null,
 )
@@ -55,16 +57,18 @@ class IncidentListViewModel @Inject constructor(
         }
     }
 
-    fun refresh() {
+    fun refresh(fromPull: Boolean = false) {
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = null) }
+            _state.update { it.copy(loading = true, refreshing = fromPull, error = null) }
             try {
                 val incidents = repository.list()
-                _state.update { it.copy(incidents = incidents, loading = false) }
+                _state.update { it.copy(incidents = incidents, loading = false, refreshing = false) }
+            } catch (failure: CancellationException) {
+                throw failure
             } catch (failure: Exception) {
                 logger.log(Level.WARNING, "Failed to load incidents", failure)
-                _state.update { it.copy(loading = false, error = failure.userMessage()) }
+                _state.update { it.copy(loading = false, refreshing = false, error = failure.userMessage()) }
             }
         }
     }

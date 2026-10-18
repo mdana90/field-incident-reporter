@@ -3,12 +3,17 @@ package com.company.fieldincidentreporter
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.swipeDown
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.company.fieldincidentreporter.data.ReportInput
@@ -83,7 +88,7 @@ class SavedDraftE2eTest {
         assertTrue(draft.photo.exists())
         assertFalse(serverIncidents().contains(draft.title))
 
-        composeRule.onNodeWithText("Submission not confirmed · tap to retry").performClick()
+        composeRule.onNode(hasText(draft.title) and hasText("Submission not confirmed · tap to retry")).performClick()
         waitForText("Retry send")
         composeRule.onNodeWithText("Save draft").assertDoesNotExist()
         composeRule.onNodeWithText("Remove").assertIsNotEnabled()
@@ -108,7 +113,7 @@ class SavedDraftE2eTest {
         assertEquals(DraftState.UNCONFIRMED, draftRow(draft.id)?.state)
         assertEquals(1, incidentCount(draft.title))
 
-        composeRule.onNodeWithText("Submission not confirmed · tap to retry").performClick()
+        composeRule.onNode(hasText(draft.title) and hasText("Submission not confirmed · tap to retry")).performClick()
         waitForText("Retry send")
         control("normal")
         composeRule.onNodeWithText("Retry send").performClick()
@@ -125,18 +130,37 @@ class SavedDraftE2eTest {
         composeRule.activityRule.scenario.recreate()
         waitForText(draft.title)
         composeRule.onNodeWithText("Server error (503). Try again.").assertExists()
-        composeRule.onNodeWithText("Submission not confirmed · tap to retry").assertExists()
+        composeRule.onNode(hasText(draft.title) and hasText("Submission not confirmed · tap to retry")).assertExists()
 
-        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.onNode(hasText("Delete") and hasAnyAncestor(hasText(draft.title))).performClick()
         composeRule.onNodeWithText("The server may already have received this report.", substring = true).assertExists()
         composeRule.onNodeWithText("Cancel").performClick()
         assertTrue(draft.photo.exists())
         assertEquals(DraftState.UNCONFIRMED, draftRow(draft.id)?.state)
 
-        composeRule.onNodeWithText("Delete").performClick()
-        composeRule.onAllNodesWithText("Delete")[1].performClick()
+        composeRule.onNode(hasText("Delete") and hasAnyAncestor(hasText(draft.title))).performClick()
+        val dialogDelete = composeRule.onAllNodesWithText("Delete")
+        dialogDelete[dialogDelete.fetchSemanticsNodes().lastIndex].performClick()
         composeRule.waitUntil(15_000) { draftRow(draft.id) == null && !draft.folder.exists() }
         assertFalse(draft.folder.exists())
+    }
+
+    @Test fun pullRefreshRecoversServerListWithoutSendingDraft() {
+        val draft = seedDraft(DraftState.DRAFT)
+        control("list_503")
+        composeRule.activityRule.scenario.recreate()
+        waitForText("Server error (503). Try again.")
+        waitForText(draft.title)
+
+        control("normal")
+        composeRule.onNode(hasScrollAction()).performTouchInput { swipeDown() }
+        composeRule.waitUntil(15_000) {
+            composeRule.onAllNodesWithText("Server error (503). Try again.").fetchSemanticsNodes().isEmpty()
+        }
+
+        assertEquals(DraftState.DRAFT, draftRow(draft.id)?.state)
+        assertFalse(serverIncidents().contains(draft.title))
+        composeRule.onNodeWithText("Saved on device · tap to send").assertExists()
     }
 
     @Test fun missingPhotoOnUnconfirmedDraftShowsActionableError() {
