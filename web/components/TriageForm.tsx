@@ -1,6 +1,6 @@
 'use client';
 
-import { startTransition, useActionState, useState } from 'react';
+import { startTransition, useActionState, useLayoutEffect, useState } from 'react';
 import { saveTriage, type TriageState, type TriageValues } from '@/app/incidents/[id]/actions';
 import { SEVERITIES, SEVERITY_LABEL, STATUS_LABEL, STATUSES } from '@/lib/incidents';
 
@@ -12,6 +12,16 @@ export function TriageForm({ incidentId, initial }: { incidentId: string; initia
   // Controlled inputs submitted via onSubmit, not <form action>: React resets a form after an action, which
   // reverts a controlled <select> to its first-rendered option and would drop the operator's values on a failed save.
   const [values, setValues] = useState(initial);
+  // Next keeps this route mounted (Activity) after navigating away, so state outlives the visit.
+  // When the server values change (e.g. a technician edit), show them instead of the stale ones.
+  const [synced, setSynced] = useState(initial);
+  if (initial.severity !== synced.severity || initial.status !== synced.status || initial.resolutionNote !== synced.resolutionNote) {
+    setSynced(initial);
+    setValues(initial);
+  }
+  // Hide the last save message once the page is hidden, so it doesn't reappear on the next visit.
+  const [messageHidden, setMessageHidden] = useState(false);
+  useLayoutEffect(() => () => setMessageHidden(true), []);
   const set = <K extends keyof TriageValues>(key: K, value: TriageValues[K]) => setValues((current) => ({ ...current, [key]: value }));
   const fieldError = (name: keyof TriageValues) => state.fields?.[name] && <p className="mt-1.5 text-[10px] text-red">{state.fields[name]}</p>;
 
@@ -21,6 +31,7 @@ export function TriageForm({ incidentId, initial }: { incidentId: string; initia
       onSubmit={(event) => {
         event.preventDefault();
         const data = new FormData(event.currentTarget);
+        setMessageHidden(false);
         startTransition(() => action(data));
       }}
     >
@@ -60,7 +71,7 @@ export function TriageForm({ incidentId, initial }: { incidentId: string; initia
         {pending ? 'Saving…' : 'Save changes'}
       </button>
       <p role="status" className={`mt-3 min-h-4 text-[11px] font-bold ${state.result === 'error' ? 'text-red' : 'text-teal'}`}>
-        {pending ? '' : state.message}
+        {pending || messageHidden ? '' : state.message}
       </p>
     </form>
   );
