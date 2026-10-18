@@ -2,14 +2,14 @@ package com.company.fieldincidentreporter
 
 import com.company.fieldincidentreporter.data.IncidentRepository
 import com.company.fieldincidentreporter.data.ReportInput
-import com.company.fieldincidentreporter.data.offline.DeliveryState
-import com.company.fieldincidentreporter.data.offline.PendingReport
-import com.company.fieldincidentreporter.data.offline.PendingReports
+import com.company.fieldincidentreporter.data.offline.DraftReport
+import com.company.fieldincidentreporter.data.offline.DraftReports
+import com.company.fieldincidentreporter.data.offline.DraftState
 import com.company.fieldincidentreporter.model.Incident
 import com.company.fieldincidentreporter.model.Severity
 import com.company.fieldincidentreporter.model.Status
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.MutableStateFlow
 
 internal fun testIncident(id: String = "incident-1") = Incident(
     id = id,
@@ -27,10 +27,11 @@ internal class FakeIncidentRepository : IncidentRepository {
     val creates = mutableListOf<ReportInput>()
     val updates = mutableListOf<ReportInput>()
     var gets = 0
+    var listResult: suspend () -> List<Incident> = { listOf(testIncident()) }
     var createResult: suspend (ReportInput) -> Incident = { testIncident() }
     var updateResult: suspend (ReportInput) -> Incident = { testIncident() }
 
-    override suspend fun list() = listOf(testIncident())
+    override suspend fun list() = listResult()
     override suspend fun get(id: String): Incident {
         gets++
         return testIncident(id)
@@ -46,19 +47,25 @@ internal class FakeIncidentRepository : IncidentRepository {
     override suspend fun delete(id: String) = Unit
 }
 
-internal class FakePendingReports(var input: ReportInput? = null) : PendingReports {
-    val queued = mutableListOf<ReportInput>()
-    val states = mutableListOf<DeliveryState>()
-    var completed = false
-    var sending = false
+internal class FakeDraftReports : DraftReports {
+    private val rows = linkedMapOf<String, DraftReport>()
+    private val flow = MutableStateFlow<List<DraftReport>>(emptyList())
+    val saves = mutableListOf<Pair<ReportInput, DraftState>>()
+    val deletes = mutableListOf<String>()
+    var saveFailure: Exception? = null
 
-    override fun observe(): Flow<List<PendingReport>> = flowOf(emptyList())
-    override suspend fun queue(input: ReportInput) { queued += input }
-    override suspend fun getInput(id: String): ReportInput? = input
-    override suspend fun markSending(id: String) { sending = true }
-    override suspend fun mark(id: String, state: DeliveryState) { states += state }
-    override suspend fun complete(id: String) { completed = true }
-    override suspend fun retry(id: String) = Unit
-    override suspend fun discard(id: String) = Unit
-    override fun ensureScheduled(reports: List<PendingReport>) = Unit
+    override fun observe(): Flow<List<DraftReport>> = flow
+    override suspend fun get(id: String): DraftReport? = rows[id]
+    override suspend fun save(input: ReportInput, state: DraftState) {
+        saveFailure?.let { throw it }
+        val id = requireNotNull(input.clientRequestId)
+        saves += input to state
+        rows[id] = DraftReport(id, input, state, rows[id]?.createdAt ?: 1L)
+        flow.value = rows.values.toList()
+    }
+    override suspend fun delete(id: String) {
+        deletes += id
+        rows.remove(id)
+        flow.value = rows.values.toList()
+    }
 }

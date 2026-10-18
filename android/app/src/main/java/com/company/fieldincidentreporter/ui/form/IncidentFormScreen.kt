@@ -59,11 +59,13 @@ import java.util.logging.Logger
 fun IncidentFormScreen(
     onExit: () -> Unit,
     onSaved: (String) -> Unit,
-    onQueued: () -> Unit,
+    onDraftSaved: () -> Unit,
+    onSendUnconfirmed: () -> Unit,
     viewModel: IncidentFormViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val editing = viewModel.editId != null
+    val savedDraft = viewModel.draftId != null || state.hasSavedDraft
     var pendingCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
     var severityOpen by remember { mutableStateOf(false) }
@@ -77,44 +79,57 @@ fun IncidentFormScreen(
     }
 
     fun requestExit() {
-        if (state.dirty) confirmDiscard = true else { viewModel.discardDraft(); onExit() }
+        if (state.dirty) confirmDiscard = true else { viewModel.discardChanges(); onExit() }
     }
 
     BackHandler(enabled = state.saving || state.dirty) { if (!state.saving) requestExit() }
     LaunchedEffect(state.savedId) { state.savedId?.let(onSaved) }
-    LaunchedEffect(state.queued) { if (state.queued) onQueued() }
+    LaunchedEffect(state.draftSaved) { if (state.draftSaved) onDraftSaved() }
+    LaunchedEffect(state.sendUnconfirmed) { if (state.sendUnconfirmed) onSendUnconfirmed() }
 
     if (confirmDiscard) {
         AlertDialog(
             onDismissRequest = { confirmDiscard = false },
             title = { Text("Discard changes?") },
-            text = { Text("Your unsaved report details will be lost.") },
-            confirmButton = { TextButton(onClick = { confirmDiscard = false; viewModel.discardDraft(); onExit() }) { Text("Discard") } },
-            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") } },
+            text = { Text(if (savedDraft) "Discard changes since the last save? The saved draft will remain on this device." else "Your unsaved report details will be lost.") },
+            confirmButton = { TextButton(onClick = { confirmDiscard = false; viewModel.discardChanges(); onExit() }) { Text("Discard changes") } },
+            dismissButton = {
+                Row {
+                    if (savedDraft && !state.unconfirmed) TextButton(onClick = { confirmDiscard = false; viewModel.saveDraft() }) { Text("Save draft") }
+                    TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") }
+                }
+            },
         )
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (editing) "Edit incident" else "Report incident") },
+                title = { Text(if (editing) "Edit incident" else if (savedDraft) "Saved draft" else "Report incident") },
                 navigationIcon = { TextButton(onClick = ::requestExit, enabled = !state.saving) { Text("‹ Back") } },
             )
         },
         bottomBar = {
-            Button(
-                onClick = viewModel::save,
-                enabled = !state.saving && !state.loading,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
-            ) {
-                if (state.saving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text(if (editing) "Save changes" else "Submit report")
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!editing && !state.unconfirmed) OutlinedButton(
+                    onClick = viewModel::saveDraft,
+                    enabled = !state.saving && !state.loading,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Save draft") }
+                Button(
+                    onClick = viewModel::sendReport,
+                    enabled = !state.saving && !state.loading,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    if (state.saving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text(if (editing) "Save changes" else if (state.unconfirmed) "Retry send" else "Send report")
+                }
             }
         },
     ) { padding ->
         if (state.loading) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        } else if (editing && state.error != null && state.photos.isEmpty() && !state.dirty) {
+        } else if ((editing || savedDraft) && state.error != null && state.photos.isEmpty() && !state.dirty) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(state.error.orEmpty())
@@ -127,7 +142,7 @@ fun IncidentFormScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    if (editing) "Update the details and save your changes." else "Capture the issue so the maintenance team can find and assess it.",
+                    if (editing) "Update the submitted incident." else if (state.unconfirmed) "Submission not confirmed. Retry with the same details and photos; this draft cannot be edited until the server responds." else "Save on this device or send to the server. Saved drafts need you to tap Send later.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (state.error != null) Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error)
@@ -144,14 +159,14 @@ fun IncidentFormScreen(
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.width(100.dp).height(90.dp),
                                 )
-                                TextButton(onClick = { viewModel.removePhoto(photo.key) }, enabled = !state.saving) { Text("Remove") }
+                                TextButton(onClick = { viewModel.removePhoto(photo.key) }, enabled = !state.saving && !state.unconfirmed) { Text("Remove") }
                             }
                         }
                     }
                 }
                 if (state.photos.size < 3) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(enabled = !state.saving, onClick = {
+                        OutlinedButton(enabled = !state.saving && !state.unconfirmed, onClick = {
                             try {
                                 val photo = viewModel.newCameraPhoto()
                                 pendingCameraPath = photo.file.absolutePath
@@ -163,7 +178,7 @@ fun IncidentFormScreen(
                                 viewModel.showError("Could not open the camera. Try again.")
                             }
                         }) { Text("Take photo") }
-                        OutlinedButton(enabled = !state.saving, onClick = {
+                        OutlinedButton(enabled = !state.saving && !state.unconfirmed, onClick = {
                             picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.SingleMimeType("image/jpeg")))
                         }) { Text("Choose photos") }
                     }
@@ -173,21 +188,21 @@ fun IncidentFormScreen(
                 OutlinedTextField(
                     value = state.title, onValueChange = viewModel::title,
                     label = { Text("Title *") }, isError = state.fieldErrors.containsKey("title"),
-                    singleLine = true, enabled = !state.saving, modifier = Modifier.fillMaxWidth(),
+                    singleLine = true, enabled = !state.saving && !state.unconfirmed, modifier = Modifier.fillMaxWidth(),
                 )
                 FieldError(state.fieldErrors["title"])
                 OutlinedTextField(
                     value = state.description, onValueChange = viewModel::description,
                     label = { Text("Description *") }, isError = state.fieldErrors.containsKey("description"),
-                    minLines = 3, enabled = !state.saving, modifier = Modifier.fillMaxWidth(),
+                    minLines = 3, enabled = !state.saving && !state.unconfirmed, modifier = Modifier.fillMaxWidth(),
                 )
                 FieldError(state.fieldErrors["description"])
 
-                ExposedDropdownMenuBox(expanded = severityOpen, onExpandedChange = { severityOpen = it }) {
+                ExposedDropdownMenuBox(expanded = severityOpen, onExpandedChange = { if (!state.saving && !state.unconfirmed) severityOpen = it }) {
                     OutlinedTextField(
                         value = state.severity?.name?.lowercase()?.replaceFirstChar(Char::uppercase).orEmpty(),
                         onValueChange = {}, readOnly = true,
-                        enabled = !state.saving,
+                        enabled = !state.saving && !state.unconfirmed,
                         label = { Text("Severity *") },
                         isError = state.fieldErrors.containsKey("severity"),
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(severityOpen) },
@@ -211,7 +226,7 @@ fun IncidentFormScreen(
                     label = { Text("Location *") },
                     placeholder = { Text("Building A, Floor 2, Room 204") },
                     isError = state.fieldErrors.containsKey("location"),
-                    singleLine = true, enabled = !state.saving, modifier = Modifier.fillMaxWidth(),
+                    singleLine = true, enabled = !state.saving && !state.unconfirmed, modifier = Modifier.fillMaxWidth(),
                 )
                 FieldError(state.fieldErrors["location"])
                 Spacer(Modifier.height(12.dp))

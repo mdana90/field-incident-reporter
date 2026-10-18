@@ -1,53 +1,59 @@
 package com.company.fieldincidentreporter.ui.list
 
 import androidx.lifecycle.ViewModel
-import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.company.fieldincidentreporter.data.IncidentRepository
-import com.company.fieldincidentreporter.data.offline.PendingReport
-import com.company.fieldincidentreporter.data.offline.PendingReports
+import com.company.fieldincidentreporter.data.offline.DraftReport
+import com.company.fieldincidentreporter.data.offline.DraftReports
 import com.company.fieldincidentreporter.model.Incident
 import com.company.fieldincidentreporter.ui.userMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import java.util.logging.Logger
+import java.util.logging.Level
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.collect
 
 data class ListUiState(
     val incidents: List<Incident> = emptyList(),
-    val pending: List<PendingReport> = emptyList(),
+    val drafts: List<DraftReport> = emptyList(),
     val loading: Boolean = true,
     val error: String? = null,
+    val draftError: String? = null,
 )
 
 @HiltViewModel
 class IncidentListViewModel @Inject constructor(
     private val repository: IncidentRepository,
-    private val pendingStore: PendingReports,
+    private val drafts: DraftReports,
 ) : ViewModel() {
+    private val logger = Logger.getLogger(IncidentListViewModel::class.java.name)
     private val _state = MutableStateFlow(ListUiState())
     val state = _state.asStateFlow()
     private var refreshJob: Job? = null
 
     init {
         viewModelScope.launch {
-            var previousIds: Set<String>? = null
-            pendingStore.observe().collect { reports ->
-                _state.update { it.copy(pending = reports) }
-                pendingStore.ensureScheduled(reports)
-                val currentIds = reports.map(PendingReport::id).toSet()
-                if (previousIds?.any { it !in currentIds } == true) refresh()
-                previousIds = currentIds
+            try {
+                drafts.observe().collect { reports -> _state.update { it.copy(drafts = reports, draftError = null) } }
+            } catch (failure: Exception) {
+                logger.log(Level.WARNING, "Failed to load drafts", failure)
+                _state.update { it.copy(draftError = "Could not load saved drafts on this device.") }
             }
         }
     }
 
-    fun retry(id: String) = viewModelScope.launch { pendingStore.retry(id) }
-    fun discard(id: String) = viewModelScope.launch { pendingStore.discard(id) }
+    fun deleteDraft(id: String) = viewModelScope.launch {
+        try {
+            drafts.delete(id)
+        } catch (failure: Exception) {
+            logger.log(Level.WARNING, "Failed to delete draft", failure)
+            _state.update { it.copy(draftError = "Could not delete this draft. Try again.") }
+        }
+    }
 
     fun refresh() {
         refreshJob?.cancel()
@@ -57,7 +63,7 @@ class IncidentListViewModel @Inject constructor(
                 val incidents = repository.list()
                 _state.update { it.copy(incidents = incidents, loading = false) }
             } catch (failure: Exception) {
-                Log.e("IncidentList", "Failed to load incidents", failure)
+                logger.log(Level.WARNING, "Failed to load incidents", failure)
                 _state.update { it.copy(loading = false, error = failure.userMessage()) }
             }
         }

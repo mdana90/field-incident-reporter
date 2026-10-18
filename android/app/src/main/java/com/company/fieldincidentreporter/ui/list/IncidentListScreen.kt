@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,6 +29,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -41,8 +45,8 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.company.fieldincidentreporter.model.Incident
-import com.company.fieldincidentreporter.data.offline.DeliveryState
-import com.company.fieldincidentreporter.data.offline.PendingReport
+import com.company.fieldincidentreporter.data.offline.DraftState
+import com.company.fieldincidentreporter.data.offline.DraftReport
 import com.company.fieldincidentreporter.ui.imageUrl
 import com.company.fieldincidentreporter.ui.incidentLocalDate
 import com.company.fieldincidentreporter.ui.theme.Amber
@@ -53,10 +57,22 @@ import com.company.fieldincidentreporter.ui.theme.TealSoft
 fun IncidentListScreen(
     onCreate: () -> Unit,
     onOpen: (String) -> Unit,
+    onOpenDraft: (String) -> Unit,
     viewModel: IncidentListViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var deleting by remember { mutableStateOf<DraftReport?>(null) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refresh() }
+
+    deleting?.let { draft ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete saved draft?") },
+            text = { Text(if (draft.state == DraftState.UNCONFIRMED) "The server may already have received this report. Delete this device's draft and local photos?" else "This unsent report and its local photos will be removed from this device.") },
+            confirmButton = { TextButton(onClick = { viewModel.deleteDraft(draft.id); deleting = null }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+        )
+    }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Incidents", fontWeight = FontWeight.Bold) }) },
@@ -69,21 +85,22 @@ fun IncidentListScreen(
         },
     ) { padding ->
         when {
-            state.loading && state.incidents.isEmpty() && state.pending.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            state.loading && state.incidents.isEmpty() && state.drafts.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            state.error != null && state.incidents.isEmpty() && state.pending.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            state.error != null && state.incidents.isEmpty() && state.drafts.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
                     Text(state.error.orEmpty())
                     Spacer(Modifier.height(8.dp))
                     Button(onClick = viewModel::refresh) { Text("Retry") }
                 }
             }
-            state.incidents.isEmpty() && state.pending.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            state.incidents.isEmpty() && state.drafts.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
                     Text("No reports yet", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(8.dp))
                     Text("Capture an issue to start your field reports.")
+                    if (state.draftError != null) Text(state.draftError.orEmpty(), color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = onCreate) { Text("Report incident") }
                 }
@@ -102,19 +119,20 @@ fun IncidentListScreen(
                                 TextButton(onClick = viewModel::refresh) { Text("Retry") }
                             }
                         }
+                        if (state.draftError != null) Text(state.draftError.orEmpty(), color = MaterialTheme.colorScheme.error)
                     }
                 }
-                if (state.pending.isNotEmpty()) {
-                    item { Text("Waiting reports", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
-                    items(state.pending, key = { "pending-${it.id}" }) { report ->
-                        PendingCard(
+                if (state.drafts.isNotEmpty()) {
+                    item { Text("Saved drafts · manual send required", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+                    items(state.drafts, key = { "draft-${it.id}" }) { report ->
+                        DraftCard(
                             report = report,
-                            onRetry = { viewModel.retry(report.id) },
-                            onDiscard = { viewModel.discard(report.id) },
+                            onOpen = { onOpenDraft(report.id) },
+                            onDelete = { deleting = report },
                         )
                     }
                 }
-                item { Text("Recent incidents", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+                item { Text("Submitted incidents", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
                 items(state.incidents, key = Incident::id) { incident ->
                     IncidentCard(incident = incident, onClick = { onOpen(incident.id) })
                 }
@@ -124,29 +142,23 @@ fun IncidentListScreen(
 }
 
 @Composable
-private fun PendingCard(report: PendingReport, onRetry: () -> Unit, onDiscard: () -> Unit) {
+private fun DraftCard(report: DraftReport, onOpen: () -> Unit, onDelete: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = TealSoft),
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Text(report.title, fontWeight = FontWeight.Bold)
-            Text(report.location, style = MaterialTheme.typography.bodySmall)
+            Text(report.input.title, fontWeight = FontWeight.Bold)
+            Text(report.input.location, style = MaterialTheme.typography.bodySmall)
             Text(
-                when (report.state) {
-                    DeliveryState.WAITING -> "Waiting to send"
-                    DeliveryState.SENDING -> "Sending"
-                    DeliveryState.NEEDS_ATTENTION -> "Needs attention"
-                },
+                if (report.state == DraftState.UNCONFIRMED) "Submission not confirmed · tap to retry" else "Saved on device · tap to send",
                 color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.labelMedium,
             )
             Row {
-                if (report.state != DeliveryState.SENDING) TextButton(onClick = onRetry) { Text("Retry") }
-                if (report.state == DeliveryState.NEEDS_ATTENTION) {
-                    TextButton(onClick = onDiscard) { Text("Discard") }
-                }
+                TextButton(onClick = onOpen) { Text("Open") }
+                TextButton(onClick = onDelete) { Text("Delete") }
             }
         }
     }
@@ -170,6 +182,7 @@ private fun IncidentCard(incident: Incident, onClick: () -> Unit) {
         )
         Column(modifier = Modifier.padding(14.dp)) {
             Text(incident.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Submitted", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(7.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(

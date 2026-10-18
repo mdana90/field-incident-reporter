@@ -16,7 +16,7 @@ import kotlinx.serialization.Serializable
 data object ListRoute
 
 @Serializable
-data class FormRoute(val id: String = "")
+data class FormRoute(val id: String = "", val draftId: String = "")
 
 @Serializable
 data class DetailRoute(val id: String)
@@ -30,6 +30,7 @@ fun AppNavHost() {
             IncidentListScreen(
                 onCreate = { navController.navigate(FormRoute()) },
                 onOpen = { id -> navController.navigate(DetailRoute(id)) },
+                onOpenDraft = { id -> navController.navigate(FormRoute(draftId = id)) },
             )
         }
         composable<FormRoute> { entry ->
@@ -44,7 +45,12 @@ fun AppNavHost() {
                         }
                     } else navController.popBackStack()
                 },
-                onQueued = {
+                onDraftSaved = {
+                    Toast.makeText(context, "Saved on this device. Not sent yet.", Toast.LENGTH_LONG).show()
+                    navController.navigate(ListRoute) { popUpTo<ListRoute> { inclusive = true } }
+                },
+                onSendUnconfirmed = {
+                    Toast.makeText(context, "Submission not confirmed. Your report is saved on this device.", Toast.LENGTH_LONG).show()
                     navController.navigate(ListRoute) { popUpTo<ListRoute> { inclusive = true } }
                 },
             )

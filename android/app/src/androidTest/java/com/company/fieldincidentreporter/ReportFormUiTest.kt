@@ -12,9 +12,9 @@ import org.junit.runner.RunWith
 class ReportFormUiTest {
     @get:Rule val composeRule = createAndroidComposeRule<MainActivity>()
 
-    @Test fun emptySubmitShowsPhotoAndSeverityGuidance() {
+    @Test fun emptySendShowsPhotoAndSeverityGuidance() {
         composeRule.onNodeWithText("+  Report incident").performClick()
-        composeRule.onNodeWithText("Submit report").performClick()
+        composeRule.onNodeWithText("Send report").performClick()
         composeRule.onNodeWithText("Choose 1 to 3 photos").assertExists()
         composeRule.onNodeWithText("Choose a severity").assertExists()
     }
