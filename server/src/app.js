@@ -6,6 +6,7 @@ import multer from 'multer';
 import { createStore } from './store.js';
 
 const severities = new Set(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
+const statuses = new Set(['OPEN', 'IN_PROGRESS', 'RESOLVED']);
 const imageTypes = new Set(['image/jpeg']);
 
 function error(res, status, code, fields = {}) {
@@ -24,6 +25,26 @@ function validate(body, count) {
   if (!severities.has(body.severity)) fields.severity = 'Choose a valid severity';
   if (count < 1 || count > 3) fields.photos = 'Choose 1 to 3 photos';
   return fields;
+}
+
+function validateTriage(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { fields: { body: 'Expected a JSON object' } };
+  const fields = {};
+  const changes = {};
+  if ('severity' in body) {
+    if (severities.has(body.severity)) changes.severity = body.severity;
+    else fields.severity = 'Choose a valid severity';
+  }
+  if ('status' in body) {
+    if (statuses.has(body.status)) changes.status = body.status;
+    else fields.status = 'Choose a valid status';
+  }
+  if ('resolutionNote' in body) {
+    if (typeof body.resolutionNote === 'string') changes.resolutionNote = body.resolutionNote.trim();
+    else fields.resolutionNote = 'Must be text';
+  }
+  if (!Object.keys(fields).length && !Object.keys(changes).length) fields.body = 'Nothing to update';
+  return { fields, changes };
 }
 
 export function createApp({ dataDir = path.resolve('data') } = {}) {
@@ -157,11 +178,23 @@ export function createApp({ dataDir = path.resolve('data') } = {}) {
     }
   });
 
+  app.patch('/incidents/:id', express.json({ limit: '16kb' }), (req, res) => {
+    const { fields, changes } = validateTriage(req.body);
+    if (Object.keys(fields).length) return error(res, 400, 'VALIDATION_FAILED', fields);
+    const previous = store.get(req.params.id);
+    if (!previous) return error(res, 404, 'NOT_FOUND');
+    const incident = { ...previous, ...changes, updatedAt: new Date().toISOString() };
+    store.update(previous.id, incident);
+    return res.json(publicIncident(incident));
+  });
+
   app.delete('/incidents/:id', (req, res) => store.remove(req.params.id)
     ? res.status(204).end() : error(res, 404, 'NOT_FOUND'));
 
   app.use((failure, req, res, _next) => {
     cleanup(req.files);
+    if (failure.type === 'entity.parse.failed') return error(res, 400, 'INVALID_JSON');
+    if (failure.type === 'entity.too.large') return error(res, 413, 'PAYLOAD_TOO_LARGE');
     console.error(failure);
     return error(res, 500, 'INTERNAL_ERROR');
   });
