@@ -151,3 +151,56 @@ test('non-multipart create and edit return validation errors', async () => {
   assert.equal(editResponse.status, 400);
   assert.equal((await editResponse.json()).error.code, 'VALIDATION_FAILED');
 });
+
+function patch(id, body, headers = { 'Content-Type': 'application/json' }) {
+  return fetch(`${baseUrl}/incidents/${id}`, { method: 'PATCH', headers, body: typeof body === 'string' ? body : JSON.stringify(body) });
+}
+
+test('triage updates severity, status, and note', async () => {
+  const incident = await (await create()).json();
+  const response = await patch(incident.id, { severity: 'CRITICAL', status: 'IN_PROGRESS', resolutionNote: '  Electrician booked  ', title: 'ignored' });
+  assert.equal(response.status, 200);
+  const updated = await response.json();
+  assert.equal(updated.severity, 'CRITICAL');
+  assert.equal(updated.status, 'IN_PROGRESS');
+  assert.equal(updated.resolutionNote, 'Electrician booked');
+  assert.equal(updated.title, 'Leaking pipe');
+  assert.notEqual(updated.updatedAt, incident.updatedAt);
+  const fetched = await (await fetch(`${baseUrl}/incidents/${incident.id}`)).json();
+  assert.equal(fetched.resolutionNote, 'Electrician booked');
+
+  const cleared = await (await patch(incident.id, { resolutionNote: '' })).json();
+  assert.equal(cleared.resolutionNote, '');
+  assert.equal(cleared.status, 'IN_PROGRESS');
+});
+
+test('triage rejects invalid bodies', async () => {
+  const incident = await (await create()).json();
+  const invalid = await patch(incident.id, { severity: 'URGENT', status: 'DONE', resolutionNote: 5 });
+  assert.equal(invalid.status, 400);
+  const { error } = await invalid.json();
+  assert.equal(error.code, 'VALIDATION_FAILED');
+  assert.deepEqual(Object.keys(error.fields).sort(), ['resolutionNote', 'severity', 'status']);
+
+  assert.equal((await patch(incident.id, {})).status, 400);
+  assert.equal((await patch(incident.id, [])).status, 400);
+  assert.equal((await patch(incident.id, '', {})).status, 400);
+
+  const malformed = await patch(incident.id, '{"status":');
+  assert.equal(malformed.status, 400);
+  assert.equal((await malformed.json()).error.code, 'INVALID_JSON');
+
+  assert.equal((await patch(incident.id, { resolutionNote: 'x'.repeat(20_000) })).status, 413);
+  assert.equal((await patch('missing', { status: 'RESOLVED' })).status, 404);
+  assert.equal((await (await fetch(`${baseUrl}/incidents/${incident.id}`)).json()).status, 'OPEN');
+});
+
+test('technician edit after triage keeps status and note', async () => {
+  const incident = await (await create()).json();
+  await patch(incident.id, { status: 'RESOLVED', resolutionNote: 'Pipe replaced' });
+  const edited = await (await fetch(`${baseUrl}/incidents/${incident.id}`, {
+    method: 'PUT', body: report({ title: 'Leaking pipe (edited)', photos: 0, keepPhotoIds: [incident.photos[0].id] }),
+  })).json();
+  assert.equal(edited.status, 'RESOLVED');
+  assert.equal(edited.resolutionNote, 'Pipe replaced');
+});
