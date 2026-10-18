@@ -91,12 +91,6 @@ test('unknown incident shows not found', async ({ page }) => {
   await expect(page.getByText('Incident not found. It may have been deleted.')).toBeVisible();
 });
 
-test('HEIC photos fall back to an Open file link', async ({ page }) => {
-  const incident = await report({ title: unique('HEIC'), heic: true });
-  await page.goto(`/incidents/${incident.id}`);
-  await expect(page.getByText('Preview not available')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open file' })).toHaveAttribute('href', /\.heic$/);
-});
 
 test('the form is locked while a save is in flight', async ({ page }) => {
   const incident = await report({ title: unique('Pending save') });

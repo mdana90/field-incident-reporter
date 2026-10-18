@@ -17,7 +17,6 @@ Set `API_BASE_URL` if the API runs elsewhere (default `http://localhost:3000`).
 
 - **Queue:** search, status/severity filters, "Critical only", and sort live in the URL. The queue refreshes every 15 seconds, so new reports from the phone appear without reloading.
 - **Detail:** photos, description, location, and a triage form that saves through `PATCH /incidents/:id`. Technician edits on Android keep the operator's status and note.
-- **Photos:** HEIC/HEIF uploads can't be shown by most browsers; they appear as a tile with an "Open file" link.
 
 Tests:
 

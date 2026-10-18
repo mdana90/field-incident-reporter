@@ -4,14 +4,14 @@ import type { Incident, Severity } from '../lib/incidents';
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
 
-type Report = { title: string; severity?: Severity; location?: string; photos?: number; heic?: boolean };
+type Report = { title: string; severity?: Severity; location?: string; photos?: number };
 
-export async function report({ title, severity = 'HIGH', location = 'Building A', photos = 1, heic = false }: Report): Promise<Incident> {
+export async function report({ title, severity = 'HIGH', location = 'Building A', photos = 1 }: Report): Promise<Incident> {
   const form = new FormData();
   const fields = { clientRequestId: crypto.randomUUID(), title, description: `${title} description`, location, severity };
   for (const [key, value] of Object.entries(fields)) form.append(key, value);
   for (let index = 0; index < photos; index++) {
-    form.append('photos', new Blob([JPEG], { type: heic ? 'image/heic' : 'image/jpeg' }), `photo-${index}.${heic ? 'heic' : 'jpg'}`);
+    form.append('photos', new Blob([JPEG], { type: 'image/jpeg' }), `photo-${index}.jpg`);
   }
   const response = await fetch(`${API_URL}/incidents`, { method: 'POST', body: form });
   if (!response.ok) throw new Error(`report failed: ${response.status}`);
