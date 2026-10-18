@@ -28,12 +28,35 @@ test('search filters the table and stays in sync with the URL', async ({ page })
   await expect(search(page)).toHaveValue('');
 });
 
+// Slow down the server render for each navigation, as on a slow network.
+async function slowNavigations(page: import('@playwright/test').Page) {
+  await page.route('**/incidents?*', async (route) => {
+    if (route.request().headers()['rsc']) await new Promise((resolve) => setTimeout(resolve, 800));
+    await route.continue();
+  });
+}
+
 test('changing a filter while a search is pending keeps both', async ({ page }) => {
   await page.goto('/incidents');
+  await slowNavigations(page);
   await search(page).fill('road');
   await page.getByRole('combobox', { name: 'Status' }).selectOption('ALL');
   await expect(page).toHaveURL(/q=road/);
   await expect(page).toHaveURL(/status=ALL/);
+  await page.waitForTimeout(1500); // let any late search push land
+  await expect(page).toHaveURL(/status=ALL/);
+  await expect(page.getByRole('combobox', { name: 'Status' })).toHaveValue('ALL');
+});
+
+test('typing while a filter navigation is in flight keeps both', async ({ page }) => {
+  await page.goto('/incidents');
+  await slowNavigations(page);
+  await page.getByRole('combobox', { name: 'Severity' }).selectOption('HIGH');
+  await search(page).fill('pipe');
+  await expect(page).toHaveURL(/q=pipe/);
+  await page.waitForTimeout(1500);
+  await expect(page).toHaveURL(/severity=HIGH/);
+  await expect(page).toHaveURL(/q=pipe/);
 });
 
 test('Critical only is driven by the severity param', async ({ page }) => {
@@ -59,11 +82,7 @@ test('invalid URL params fall back to the default view', async ({ page }) => {
 
 test('quick successive filter changes keep every selection', async ({ page }) => {
   await page.goto('/incidents');
-  // Slow down the server render for each navigation, as on a slow network.
-  await page.route('**/incidents?*', async (route) => {
-    if (route.request().headers()['rsc']) await new Promise((resolve) => setTimeout(resolve, 800));
-    await route.continue();
-  });
+  await slowNavigations(page);
   await page.getByRole('combobox', { name: 'Status' }).selectOption('ALL');
   await page.getByRole('combobox', { name: 'Severity' }).selectOption('HIGH');
   await page.getByRole('combobox', { name: 'Sort' }).selectOption('newest');

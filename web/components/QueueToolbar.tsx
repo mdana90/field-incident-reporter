@@ -17,15 +17,16 @@ export function QueueToolbar({ query }: { query: QueueQuery }) {
   const go = (patch: Partial<QueueQuery>) => startNavigation(() => router.replace(queueHref(query, patch), { scroll: false }));
 
   // Push the search after typing pauses. Cleanup cancels a pending push when the draft or other filters change.
+  // Wait while a navigation is in flight: `query` is stale until it lands, and pushing now would undo that change.
   useEffect(() => {
     const q = draft.trim();
-    if (q === query.q) return;
+    if (navigating || q === query.q) return;
     const timer = setTimeout(() => {
       lastPushed.current = q;
       startNavigation(() => router.replace(queueHref(query, { q }), { scroll: false }));
     }, 300);
     return () => clearTimeout(timer);
-  }, [draft, query, router]);
+  }, [draft, query, router, navigating]);
 
   // The URL changed from outside (Clear filters, Back/Forward): show its search. Polling leaves q unchanged.
   useEffect(() => {
