@@ -1,29 +1,69 @@
-# Field Incident Reporter
+# 🚨 Field Incident Reporter
 
-An Android project for a field technician to report a physical incident with a photo, then view, edit, or delete the report. The project is based on the senior Android engineer technical assessment in this repository.
+Field Incident Reporter lets a field technician photograph an incident, enter its details, and send it to a local API. Technicians can view, edit, and delete submitted reports. An operator can review and triage them in the web dashboard.
 
-## Operator web dashboard (optional bonus)
+## 🎬 Demo videos
 
-A Next.js dashboard in `web/` where an operator reviews incidents reported from the Android app, filters the queue, and triages each report (severity, status, resolution note). It reads and writes through the same local API as the app.
+- [Android app demo](docs/demo/field-incident-demo.mp4)
+- [Web dashboard demo](docs/demo/web-dashboard-demo.mp4)
 
-Run the API and the dashboard in two terminals (Node 22.12+; the web tests need it):
 
-```sh
-cd server && npm install && npm start          # API on http://localhost:3000
-cd web && npm install && npm run dev           # dashboard on http://localhost:3001
-```
+## 🚀 Run locally
 
-Set `API_BASE_URL` if the API runs elsewhere (default `http://localhost:3000`).
+### Run the API server
 
-- **Queue:** search, status/severity filters, "Critical only", and sort live in the URL. The queue refreshes every 15 seconds, so new reports from the phone appear without reloading.
-- **Detail:** photos, description, location, and a triage form that saves through `PATCH /incidents/:id`. Technician edits on Android keep the operator's status and note.
-
-Tests:
+Start the API with Node.js 22.12 or later:
 
 ```sh
-cd server && npm test   # API, including PATCH triage
-cd web && npm test      # queue filtering, sorting, and formatting
-cd web && npx playwright install chromium && npm run test:e2e   # browser tests: queue + triage flows
+cd server
+npm install
+npm start
 ```
 
-The browser tests start their own API (temporary data) and dashboard build on ports 3100/3101, so they don't touch dev servers or real data.
+The API runs at `http://localhost:3000`. Its request and response formats are documented in [server/API.md](server/API.md).
+
+### Connect the emulator to the local API
+
+To run the Android app, open `android/` in Android Studio and start an emulator. In a terminal, connect the emulator to the local API:
+
+```sh
+adb reverse tcp:3000 tcp:3000
+```
+
+Then run the debug app from Android Studio. Its default API URL is `http://127.0.0.1:3000/`. For another setup, pass a Gradle property such as `-PapiBaseUrl=http://YOUR_HOST:3000/`.
+
+### Run the web dashboard
+
+To start the operator dashboard in a separate terminal:
+
+```sh
+cd web
+npm install
+npm run dev
+```
+
+Open `http://localhost:3001`. Set `API_BASE_URL` if the API is running somewhere other than `http://localhost:3000`.
+
+## ✨ Features
+
+### 📱 Android app
+
+- **Report incidents:** Add details and one to three photos using the camera or photo picker.
+- **Save and send:** Keep drafts on the device, then send them when ready. Retry submissions whose result could not be confirmed.
+- **Manage reports:** View, edit, or delete submitted incidents.
+
+### 🖥️ Operator dashboard
+
+- **Find what matters:** Search, filter, and sort a queue that refreshes every 15 seconds.
+- **Review and resolve:** Inspect photos and details, then update severity, status, and the resolution note.
+
+## 🧪 Tests
+
+```sh
+cd server && npm test
+cd android && ./gradlew :app:testDebugUnitTest :app:assembleDebug
+cd web && npm test
+cd web && npx playwright install chromium && npm run test:e2e
+```
+
+The browser tests start their own API and dashboard with temporary data.
