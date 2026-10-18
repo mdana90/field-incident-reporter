@@ -51,8 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.company.fieldincidentreporter.model.Severity
 import com.company.fieldincidentreporter.ui.imageUrl
-import java.util.logging.Level
-import java.util.logging.Logger
+import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -174,7 +173,7 @@ fun IncidentFormScreen(
                             } catch (failure: Exception) {
                                 pendingCameraPath?.let { viewModel.cameraResult(it, false) }
                                 pendingCameraPath = null
-                                Logger.getLogger("IncidentFormScreen").log(Level.WARNING, "Failed to open camera", failure)
+                                Timber.w(failure, "Failed to open camera")
                                 viewModel.showError("Could not open the camera. Try again.")
                             }
                         }) { Text("Take photo") }
