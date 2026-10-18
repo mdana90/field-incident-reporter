@@ -12,7 +12,7 @@ import com.company.fieldincidentreporter.model.Severity
 import com.company.fieldincidentreporter.model.Status
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flow
 
 internal fun testIncident(id: String = "incident-1") = Incident(
     id = id,
@@ -52,15 +52,16 @@ internal class FakeIncidentRepository : IncidentRepository {
 
 internal class FakeDraftReports : DraftReports {
     private val rows = linkedMapOf<String, DraftReport>()
-    private val flow = MutableStateFlow<List<DraftReport>>(emptyList())
+    private val stream = MutableStateFlow<List<DraftReport>>(emptyList())
     val saves = mutableListOf<Pair<ReportInput, DraftState>>()
     val deletes = mutableListOf<String>()
     var saveFailure: Exception? = null
     var getFailure: Exception? = null
+    var observeFailure: Exception? = null
 
     fun stored(id: String): DraftReport? = rows[id]
 
-    override fun observe(): Flow<Result<List<DraftReport>>> = flow.map { Result.Success(it) }
+    override fun observe(): Flow<List<DraftReport>> = observeFailure?.let { failure -> flow { throw failure } } ?: stream
     override suspend fun get(id: String): Result<DraftReport?> = resultOf {
         getFailure?.let { throw it }
         rows[id]
@@ -70,11 +71,11 @@ internal class FakeDraftReports : DraftReports {
         val id = requireNotNull(input.clientRequestId)
         saves += input to state
         rows[id] = DraftReport(id, input, state, rows[id]?.createdAt ?: 1L)
-        flow.value = rows.values.toList()
+        stream.value = rows.values.toList()
     }
     override suspend fun delete(id: String): Result<Unit> = resultOf {
         deletes += id
         rows.remove(id)
-        flow.value = rows.values.toList()
+        stream.value = rows.values.toList()
     }
 }

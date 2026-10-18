@@ -14,7 +14,7 @@ data class DraftReport(
 )
 
 interface DraftReports {
-    fun observe(): Flow<Result<List<DraftReport>>>
+    fun observe(): Flow<List<DraftReport>>
     suspend fun get(id: String): Result<DraftReport?>
     suspend fun save(input: ReportInput, state: DraftState): Result<Unit>
     suspend fun delete(id: String): Result<Unit>

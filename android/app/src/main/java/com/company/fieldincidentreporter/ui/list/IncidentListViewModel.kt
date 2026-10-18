@@ -12,8 +12,12 @@ import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 data class ListUiState(
     val incidents: List<Incident> = emptyList(),
@@ -34,14 +38,13 @@ class IncidentListViewModel @Inject constructor(
     private var refreshJob: Job? = null
 
     init {
-        viewModelScope.launch {
-            drafts.observe().collect { result ->
-                when (result) {
-                    is Result.Success -> _state.update { it.copy(drafts = result.data, draftError = null) }
-                    is Result.Error -> _state.update { it.copy(draftError = "Could not load saved drafts on this device.") }
-                }
+        drafts.observe()
+            .onEach { reports -> _state.update { it.copy(drafts = reports, draftError = null) } }
+            .catch { failure ->
+                Timber.w(failure, "Failed to load drafts")
+                _state.update { it.copy(draftError = "Could not load saved drafts on this device.") }
             }
-        }
+            .launchIn(viewModelScope)
     }
 
     fun deleteDraft(id: String) = viewModelScope.launch {

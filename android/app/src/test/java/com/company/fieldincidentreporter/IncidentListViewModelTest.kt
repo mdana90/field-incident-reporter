@@ -41,6 +41,16 @@ class IncidentListViewModelTest {
         assertNotNull(viewModel.state.value.error)
     }
 
+    @Test fun draftLoadFailureShowsDraftErrorAndKeepsServerList() = runTest(dispatcher) {
+        val drafts = FakeDraftReports().apply { observeFailure = IOException("database unavailable") }
+        val viewModel = IncidentListViewModel(FakeIncidentRepository(), drafts)
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.state.value.draftError)
+        assertEquals("incident-1", viewModel.state.value.incidents.single().id)
+    }
+
     @Test fun pullRefreshKeepsVisibleReportsAndNeverSendsDrafts() = runTest(dispatcher) {
         val drafts = FakeDraftReports()
         drafts.save(ReportInput("Pipe", "Leaking", Severity.HIGH, "A", emptyList(), clientRequestId = "draft-1"), DraftState.DRAFT)
