@@ -5,13 +5,12 @@ import { SeverityBadge, StatusBadge } from '@/components/Badges';
 import { PhotoGallery } from '@/components/PhotoGallery';
 import { TriageForm } from '@/components/TriageForm';
 import { getIncident, listIncidents, photoUrl } from '@/lib/api';
-import { formatReported, isPreviewable, SEVERITIES, SEVERITY_GUIDE, SEVERITY_LABEL, shortId, summarize } from '@/lib/incidents';
+import { formatReportedInline, isPreviewable, SEVERITIES, SEVERITY_GUIDE, SEVERITY_LABEL, shortId, summarize } from '@/lib/incidents';
 
 export default async function IncidentPage({ params }: PageProps<'/incidents/[id]'>) {
   const { id } = await params;
   const [incident, list] = await Promise.all([getIncident(id), listIncidents()]);
   if (!incident) notFound();
-  const reported = formatReported(incident.createdAt);
 
   return (
     <AppShell
@@ -22,7 +21,7 @@ export default async function IncidentPage({ params }: PageProps<'/incidents/[id
         <Link href="/incidents" className="mb-3 inline-flex items-center gap-1.5 text-[11px] font-extrabold text-teal">← Back to queue</Link>
         <h1 className="text-[21px] font-bold tracking-tight md:text-[25px]">{incident.title}</h1>
         <p className="mt-[7px] text-[11px] text-[#819195]">
-          {`Incident #${shortId(incident.id)} · Reported ${reported.charAt(0).toLowerCase()}${reported.slice(1)}`}
+          {`Incident #${shortId(incident.id)} · Reported ${formatReportedInline(incident.createdAt)}`}
         </p>
         <div className="mt-3 flex items-center gap-[7px]">
           <SeverityBadge severity={incident.severity} suffix=" severity" />

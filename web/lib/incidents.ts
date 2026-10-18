@@ -91,6 +91,11 @@ export function formatReported(iso: string, now = new Date()): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// For use mid-sentence ("Reported today, 8:42 AM"); month names keep their capital.
+export function formatReportedInline(iso: string, now = new Date()): string {
+  return formatReported(iso, now).replace(/^(Today|Yesterday)/, (word) => word.toLowerCase());
+}
+
 function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }

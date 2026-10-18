@@ -6,7 +6,7 @@ An Android project for a field technician to report a physical incident with a p
 
 A Next.js dashboard in `web/` where an operator reviews incidents reported from the Android app, filters the queue, and triages each report (severity, status, resolution note). It reads and writes through the same local API as the app.
 
-Run the API and the dashboard in two terminals (Node 20+):
+Run the API and the dashboard in two terminals (Node 22.12+; the web tests need it):
 
 ```sh
 cd server && npm install && npm start          # API on http://localhost:3000

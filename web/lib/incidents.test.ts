@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { filterIncidents, formatReported, isPreviewable, parseQueueQuery, queueHref, summarize, type Incident } from './incidents';
+import { filterIncidents, formatReported, formatReportedInline, isPreviewable, parseQueueQuery, queueHref, summarize, type Incident } from './incidents';
 
 const make = (over: Partial<Incident>): Incident => ({
   id: 'id', title: 'T', description: 'D', location: 'L', severity: 'LOW', status: 'OPEN',
@@ -51,6 +51,13 @@ test('formatReported', () => {
   expect(formatReported(new Date(2026, 9, 18, 8, 42).toISOString(), now)).toBe('Today, 8:42 AM');
   expect(formatReported(new Date(2026, 9, 17, 23, 59).toISOString(), now)).toBe('Yesterday, 11:59 PM');
   expect(formatReported(new Date(2026, 9, 3, 9, 0).toISOString(), now)).toBe('Oct 3, 2026');
+});
+
+test('formatReportedInline lowercases only relative days', () => {
+  const now = new Date(2026, 9, 18, 12, 0);
+  expect(formatReportedInline(new Date(2026, 9, 18, 8, 42).toISOString(), now)).toBe('today, 8:42 AM');
+  expect(formatReportedInline(new Date(2026, 9, 17, 23, 59).toISOString(), now)).toBe('yesterday, 11:59 PM');
+  expect(formatReportedInline(new Date(2026, 9, 3, 9, 0).toISOString(), now)).toBe('Oct 3, 2026');
 });
 
 test('isPreviewable', () => {
