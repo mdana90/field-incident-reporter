@@ -6,7 +6,7 @@ import multer from 'multer';
 import { createStore } from './store.js';
 
 const severities = new Set(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
-const imageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
+const imageTypes = new Set(['image/jpeg']);
 
 function error(res, status, code, fields = {}) {
   return res.status(status).json({ error: { code, fields } });
@@ -33,8 +33,7 @@ export function createApp({ dataDir = path.resolve('data') } = {}) {
     storage: multer.diskStorage({
       destination: store.uploadDir,
       filename: (_req, file, callback) => {
-        const extension = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/heic': '.heic', 'image/heif': '.heif' }[file.mimetype] ?? '.bin';
-        callback(null, `${randomUUID()}${extension}`);
+        callback(null, `${randomUUID()}.jpg`);
       },
     }),
     fileFilter: (_req, file, callback) => callback(imageTypes.has(file.mimetype) ? null : new Error('UNSUPPORTED_IMAGE'), true),
@@ -59,6 +58,16 @@ export function createApp({ dataDir = path.resolve('data') } = {}) {
     return { id: randomUUID(), url: `/uploads/${file.filename}` };
   }
 
+  function isJpeg(file) {
+    const bytes = Buffer.alloc(2);
+    const descriptor = fs.openSync(file.path, 'r');
+    try {
+      return fs.readSync(descriptor, bytes, 0, 2, 0) === 2 && bytes[0] === 0xff && bytes[1] === 0xd8;
+    } finally {
+      fs.closeSync(descriptor);
+    }
+  }
+
   app.use('/uploads', express.static(store.uploadDir));
 
   app.get('/incidents', (_req, res) => res.json(store.list().map(publicIncident)));
@@ -69,7 +78,12 @@ export function createApp({ dataDir = path.resolve('data') } = {}) {
 
   app.post('/incidents', multipart, (req, res) => {
     const files = req.files ?? [];
-    const clientRequestId = text(req.body.clientRequestId);
+    if (files.some((file) => !isJpeg(file))) {
+      cleanup(files);
+      return error(res, 400, 'UNSUPPORTED_IMAGE');
+    }
+    const body = req.body ?? {};
+    const clientRequestId = text(body.clientRequestId);
     if (!clientRequestId) {
       cleanup(files);
       return error(res, 400, 'VALIDATION_FAILED', { clientRequestId: 'Required' });
@@ -79,7 +93,7 @@ export function createApp({ dataDir = path.resolve('data') } = {}) {
       cleanup(files);
       return res.json(publicIncident(existing));
     }
-    const fields = validate(req.body, files.length);
+    const fields = validate(body, files.length);
     if (Object.keys(fields).length) {
       cleanup(files);
       return error(res, 400, 'VALIDATION_FAILED', fields);
@@ -87,8 +101,8 @@ export function createApp({ dataDir = path.resolve('data') } = {}) {
     const now = new Date().toISOString();
     const incident = {
       id: randomUUID(), clientRequestId,
-      title: text(req.body.title), description: text(req.body.description),
-      severity: req.body.severity, location: text(req.body.location), status: 'OPEN',
+      title: text(body.title), description: text(body.description),
+      severity: body.severity, location: text(body.location), status: 'OPEN',
       photos: files.map(photo), createdAt: now, updatedAt: now,
     };
     try {
@@ -103,6 +117,11 @@ export function createApp({ dataDir = path.resolve('data') } = {}) {
 
   app.put('/incidents/:id', multipart, (req, res) => {
     const files = req.files ?? [];
+    if (files.some((file) => !isJpeg(file))) {
+      cleanup(files);
+      return error(res, 400, 'UNSUPPORTED_IMAGE');
+    }
+    const body = req.body ?? {};
     const previous = store.get(req.params.id);
     if (!previous) {
       cleanup(files);
@@ -110,14 +129,14 @@ export function createApp({ dataDir = path.resolve('data') } = {}) {
     }
     let keepIds;
     try {
-      keepIds = req.body.keepPhotoIds ? JSON.parse(req.body.keepPhotoIds) : [];
+      keepIds = body.keepPhotoIds ? JSON.parse(body.keepPhotoIds) : [];
       if (!Array.isArray(keepIds) || !keepIds.every((id) => typeof id === 'string')) throw new Error('Invalid keepPhotoIds');
     } catch {
       cleanup(files);
       return error(res, 400, 'VALIDATION_FAILED', { keepPhotoIds: 'Invalid photo selection' });
     }
     const retained = previous.photos.filter((item) => keepIds.includes(item.id));
-    const fields = validate(req.body, retained.length + files.length);
+    const fields = validate(body, retained.length + files.length);
     if (retained.length !== new Set(keepIds).size) fields.keepPhotoIds = 'Unknown photo ID';
     if (Object.keys(fields).length) {
       cleanup(files);
@@ -125,8 +144,8 @@ export function createApp({ dataDir = path.resolve('data') } = {}) {
     }
     const incident = {
       ...previous,
-      title: text(req.body.title), description: text(req.body.description),
-      severity: req.body.severity, location: text(req.body.location),
+      title: text(body.title), description: text(body.description),
+      severity: body.severity, location: text(body.location),
       photos: [...retained, ...files.map(photo)], updatedAt: new Date().toISOString(),
     };
     try {

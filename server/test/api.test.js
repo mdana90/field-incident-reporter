@@ -116,10 +116,38 @@ test('retaining unknown photos and removing every photo are rejected without orp
 });
 
 test('unsupported images are rejected', async () => {
-  const form = report({ photos: 0 });
-  form.append('photos', new Blob(['text'], { type: 'text/plain' }), 'note.txt');
-  const response = await fetch(`${baseUrl}/incidents`, { method: 'POST', body: form });
+  for (const type of ['text/plain', 'image/png', 'image/heic']) {
+    const form = report({ photos: 0 });
+    form.append('photos', new Blob(['unsupported'], { type }), 'unsupported');
+    const response = await fetch(`${baseUrl}/incidents`, { method: 'POST', body: form });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error.code, 'UNSUPPORTED_IMAGE');
+    assert.equal(uploadedFiles().length, 0);
+  }
+
+  const mislabeled = report({ photos: 0 });
+  mislabeled.append('photos', new Blob(['not a JPEG'], { type: 'image/jpeg' }), 'false.jpg');
+  const response = await fetch(`${baseUrl}/incidents`, { method: 'POST', body: mislabeled });
   assert.equal(response.status, 400);
   assert.equal((await response.json()).error.code, 'UNSUPPORTED_IMAGE');
   assert.equal(uploadedFiles().length, 0);
+});
+
+test('non-multipart create and edit return validation errors', async () => {
+  const createResponse = await fetch(`${baseUrl}/incidents`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Pipe' }),
+  });
+  assert.equal(createResponse.status, 400);
+  assert.equal((await createResponse.json()).error.code, 'VALIDATION_FAILED');
+
+  const existing = await (await create()).json();
+  const editResponse = await fetch(`${baseUrl}/incidents/${existing.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Pipe' }),
+  });
+  assert.equal(editResponse.status, 400);
+  assert.equal((await editResponse.json()).error.code, 'VALIDATION_FAILED');
 });
