@@ -24,4 +24,7 @@ Tests:
 ```sh
 cd server && npm test   # API, including PATCH triage
 cd web && npm test      # queue filtering, sorting, and formatting
+cd web && npx playwright install chromium && npm run test:e2e   # browser tests: queue + triage flows
 ```
+
+The browser tests start their own API (temporary data) and dashboard build on ports 3100/3101, so they don't touch dev servers or real data.
