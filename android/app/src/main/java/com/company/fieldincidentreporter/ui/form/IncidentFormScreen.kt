@@ -1,6 +1,5 @@
 package com.company.fieldincidentreporter.ui.form
 
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -52,6 +51,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.company.fieldincidentreporter.model.Severity
 import com.company.fieldincidentreporter.ui.imageUrl
+import java.util.logging.Level
+import java.util.logging.Logger
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,21 +64,20 @@ fun IncidentFormScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val editing = viewModel.editId != null
-    var pendingCameraUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
     var severityOpen by remember { mutableStateOf(false) }
 
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        val uri = pendingCameraUri
-        if (success && uri != null) viewModel.addPhoto(Uri.parse(uri))
-        pendingCameraUri = null
+        pendingCameraPath?.let { viewModel.cameraResult(it, success) }
+        pendingCameraPath = null
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(3)) { uris ->
         uris.take(3 - state.photos.size).forEach(viewModel::addPhoto)
     }
 
     fun requestExit() {
-        if (state.dirty) confirmDiscard = true else onExit()
+        if (state.dirty) confirmDiscard = true else { viewModel.discardDraft(); onExit() }
     }
 
     BackHandler(enabled = state.saving || state.dirty) { if (!state.saving) requestExit() }
@@ -89,7 +89,7 @@ fun IncidentFormScreen(
             onDismissRequest = { confirmDiscard = false },
             title = { Text("Discard changes?") },
             text = { Text("Your unsaved report details will be lost.") },
-            confirmButton = { TextButton(onClick = { confirmDiscard = false; onExit() }) { Text("Discard") } },
+            confirmButton = { TextButton(onClick = { confirmDiscard = false; viewModel.discardDraft(); onExit() }) { Text("Discard") } },
             dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") } },
         )
     }
@@ -133,7 +133,7 @@ fun IncidentFormScreen(
                 if (state.error != null) Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error)
 
                 Text("Photos *", fontWeight = FontWeight.Bold)
-                Text("Add 1 to 3 photos. A wider view and a close-up can help.", style = MaterialTheme.typography.bodySmall)
+                Text("Add 1 to 3 JPEG photos. A wider view and a close-up can help.", style = MaterialTheme.typography.bodySmall)
                 if (state.photos.isNotEmpty()) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(state.photos, key = FormPhoto::key) { photo ->
@@ -153,15 +153,18 @@ fun IncidentFormScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(enabled = !state.saving, onClick = {
                             try {
-                                val uri = viewModel.newCameraUri()
-                                pendingCameraUri = uri.toString()
-                                camera.launch(uri)
+                                val photo = viewModel.newCameraPhoto()
+                                pendingCameraPath = photo.file.absolutePath
+                                camera.launch(photo.uri)
                             } catch (failure: Exception) {
-                                viewModel.showError(failure.message ?: "Could not open the camera")
+                                pendingCameraPath?.let { viewModel.cameraResult(it, false) }
+                                pendingCameraPath = null
+                                Logger.getLogger("IncidentFormScreen").log(Level.WARNING, "Failed to open camera", failure)
+                                viewModel.showError("Could not open the camera. Try again.")
                             }
                         }) { Text("Take photo") }
                         OutlinedButton(enabled = !state.saving, onClick = {
-                            picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.SingleMimeType("image/jpeg")))
                         }) { Text("Choose photos") }
                     }
                 }

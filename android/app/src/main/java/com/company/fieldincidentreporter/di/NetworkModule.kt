@@ -3,7 +3,9 @@ package com.company.fieldincidentreporter.di
 import com.company.fieldincidentreporter.BuildConfig
 import com.company.fieldincidentreporter.data.IncidentApi
 import com.company.fieldincidentreporter.data.IncidentRepository
+import com.company.fieldincidentreporter.data.DraftPhotoStore
 import com.company.fieldincidentreporter.data.NetworkIncidentRepository
+import com.company.fieldincidentreporter.data.PhotoStorage
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -42,4 +44,7 @@ object NetworkModule {
 abstract class RepositoryModule {
     @Binds
     abstract fun bindIncidentRepository(implementation: NetworkIncidentRepository): IncidentRepository
+
+    @Binds
+    abstract fun bindDraftPhotoStore(implementation: PhotoStorage): DraftPhotoStore
 }

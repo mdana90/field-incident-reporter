@@ -13,5 +13,5 @@ fun Throwable.userMessage(): String = when (this) {
         413 -> "A photo is too large. Choose one under 10 MiB."
         else -> "Server error (${code()}). Try again."
     }
-    else -> message ?: "Something went wrong. Try again."
+    else -> "Something went wrong. Try again."
 }

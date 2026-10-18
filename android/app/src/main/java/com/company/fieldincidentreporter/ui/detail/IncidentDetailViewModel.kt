@@ -10,6 +10,8 @@ import com.company.fieldincidentreporter.ui.DetailRoute
 import com.company.fieldincidentreporter.ui.userMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import java.util.logging.Level
+import java.util.logging.Logger
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,6 +31,7 @@ class IncidentDetailViewModel @Inject constructor(
     private val repository: IncidentRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+    private val logger = Logger.getLogger(IncidentDetailViewModel::class.java.name)
     private val id = savedStateHandle.toRoute<DetailRoute>().id
     private val _state = MutableStateFlow(DetailUiState())
     val state = _state.asStateFlow()
@@ -42,6 +45,7 @@ class IncidentDetailViewModel @Inject constructor(
                 val incident = repository.get(id)
                 _state.update { it.copy(incident = incident, loading = false) }
             } catch (failure: Exception) {
+                logger.log(Level.WARNING, "Failed to load incident", failure)
                 _state.update { it.copy(loading = false, error = failure.userMessage()) }
             }
         }
@@ -55,6 +59,7 @@ class IncidentDetailViewModel @Inject constructor(
                 repository.delete(id)
                 _state.update { it.copy(deleting = false, deleted = true) }
             } catch (failure: Exception) {
+                logger.log(Level.WARNING, "Failed to delete incident", failure)
                 _state.update { it.copy(deleting = false, error = failure.userMessage()) }
             }
         }

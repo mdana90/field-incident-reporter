@@ -58,14 +58,7 @@ class NetworkIncidentRepository @Inject constructor(
     )
 
     private fun photos(input: ReportInput): List<MultipartBody.Part> = input.newPhotos.map { file ->
-        val mediaType = when (file.extension.lowercase()) {
-            "png" -> "image/png"
-            "webp" -> "image/webp"
-            "heic" -> "image/heic"
-            "heif" -> "image/heif"
-            else -> "image/jpeg"
-        }.toMediaType()
-        MultipartBody.Part.createFormData("photos", file.name, file.asRequestBody(mediaType))
+        MultipartBody.Part.createFormData("photos", file.name, file.asRequestBody("image/jpeg".toMediaType()))
     }
 
     private fun String.toPart() = toRequestBody("text/plain".toMediaType())
