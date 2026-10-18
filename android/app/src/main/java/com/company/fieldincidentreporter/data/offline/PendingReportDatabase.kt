@@ -37,6 +37,9 @@ interface PendingReportDao {
     @Query("UPDATE pending_reports SET state = :state WHERE id = :id")
     suspend fun updateState(id: String, state: String)
 
+    @Query("UPDATE pending_reports SET state = 'SENDING', attempted = 1 WHERE id = :id")
+    suspend fun markSending(id: String)
+
     @Query("DELETE FROM pending_reports WHERE id = :id")
     suspend fun delete(id: String)
 }

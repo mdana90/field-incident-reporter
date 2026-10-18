@@ -2,8 +2,11 @@ package com.company.fieldincidentreporter.di
 
 import android.content.Context
 import androidx.room.Room
+import com.company.fieldincidentreporter.data.offline.PendingReportStore
+import com.company.fieldincidentreporter.data.offline.PendingReports
 import com.company.fieldincidentreporter.data.offline.PendingReportDao
 import com.company.fieldincidentreporter.data.offline.PendingReportDatabase
+import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,4 +24,11 @@ object OfflineModule {
 
     @Provides
     fun dao(database: PendingReportDatabase): PendingReportDao = database.pendingReports()
+}
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class OfflineBindings {
+    @Binds
+    abstract fun pendingReports(store: PendingReportStore): PendingReports
 }

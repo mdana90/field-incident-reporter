@@ -40,10 +40,10 @@ class PendingReportStore @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val dao: PendingReportDao,
     private val json: Json,
-) {
+) : PendingReports {
     private val workManager by lazy { WorkManager.getInstance(context) }
 
-    fun observe(): Flow<List<PendingReport>> = dao.observeAll().map { reports ->
+    override fun observe(): Flow<List<PendingReport>> = dao.observeAll().map { reports ->
         reports.map { entity ->
             PendingReport(
                 id = entity.id,
@@ -57,7 +57,7 @@ class PendingReportStore @Inject constructor(
         }
     }
 
-    suspend fun queue(input: ReportInput) {
+    override suspend fun queue(input: ReportInput) {
         val id = requireNotNull(input.clientRequestId)
         if (dao.get(id) != null) {
             schedule(id, replace = false)
@@ -83,15 +83,15 @@ class PendingReportStore @Inject constructor(
             location = input.location,
             photoPathsJson = json.encodeToString(copied),
             state = DeliveryState.WAITING.name,
-            attempted = true,
+            attempted = false,
             createdAt = System.currentTimeMillis(),
         ))
         schedule(id, replace = false)
     }
 
-    suspend fun get(id: String): PendingReportEntity? = dao.get(id)
+    override suspend fun getInput(id: String): ReportInput? = dao.get(id)?.let(::toInput)
 
-    fun toInput(entity: PendingReportEntity): ReportInput = ReportInput(
+    private fun toInput(entity: PendingReportEntity): ReportInput = ReportInput(
         title = entity.title,
         description = entity.description,
         severity = Severity.valueOf(entity.severity),
@@ -100,14 +100,16 @@ class PendingReportStore @Inject constructor(
         clientRequestId = entity.id,
     )
 
-    suspend fun mark(id: String, state: DeliveryState) = dao.updateState(id, state.name)
+    override suspend fun markSending(id: String) = dao.markSending(id)
 
-    suspend fun complete(id: String) {
+    override suspend fun mark(id: String, state: DeliveryState) = dao.updateState(id, state.name)
+
+    override suspend fun complete(id: String) {
         dao.delete(id)
         withContext(Dispatchers.IO) { File(context.filesDir, "pending/$id").deleteRecursively() }
     }
 
-    suspend fun discard(id: String) {
+    override suspend fun discard(id: String) {
         val item = dao.get(id) ?: return
         if (!item.attempted || item.state == DeliveryState.NEEDS_ATTENTION.name) {
             workManager.cancelUniqueWork(workName(id))
@@ -115,14 +117,14 @@ class PendingReportStore @Inject constructor(
         }
     }
 
-    suspend fun retry(id: String) {
+    override suspend fun retry(id: String) {
         if (dao.get(id) == null) return
         dao.updateState(id, DeliveryState.WAITING.name)
         schedule(id, replace = true)
     }
 
-    fun ensureScheduled(reports: List<PendingReport>) {
-        reports.filter { it.state == DeliveryState.WAITING }.forEach { schedule(it.id, replace = false) }
+    override fun ensureScheduled(reports: List<PendingReport>) {
+        reports.filter { it.state != DeliveryState.NEEDS_ATTENTION }.forEach { schedule(it.id, replace = false) }
     }
 
     private fun schedule(id: String, replace: Boolean) {

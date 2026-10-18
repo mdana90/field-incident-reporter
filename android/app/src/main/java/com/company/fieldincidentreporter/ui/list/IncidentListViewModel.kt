@@ -5,7 +5,7 @@ import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.company.fieldincidentreporter.data.IncidentRepository
 import com.company.fieldincidentreporter.data.offline.PendingReport
-import com.company.fieldincidentreporter.data.offline.PendingReportStore
+import com.company.fieldincidentreporter.data.offline.PendingReports
 import com.company.fieldincidentreporter.model.Incident
 import com.company.fieldincidentreporter.ui.userMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,7 +27,7 @@ data class ListUiState(
 @HiltViewModel
 class IncidentListViewModel @Inject constructor(
     private val repository: IncidentRepository,
-    private val pendingStore: PendingReportStore,
+    private val pendingStore: PendingReports,
 ) : ViewModel() {
     private val _state = MutableStateFlow(ListUiState())
     val state = _state.asStateFlow()
