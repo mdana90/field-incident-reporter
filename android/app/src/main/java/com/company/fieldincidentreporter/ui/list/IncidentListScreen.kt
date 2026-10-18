@@ -144,7 +144,7 @@ private fun PendingCard(report: PendingReport, onRetry: () -> Unit, onDiscard: (
             )
             Row {
                 if (report.state != DeliveryState.SENDING) TextButton(onClick = onRetry) { Text("Retry") }
-                if (!report.attempted || report.state == DeliveryState.NEEDS_ATTENTION) {
+                if (report.state == DeliveryState.NEEDS_ATTENTION) {
                     TextButton(onClick = onDiscard) { Text("Discard") }
                 }
             }

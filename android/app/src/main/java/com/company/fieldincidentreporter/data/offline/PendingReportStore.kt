@@ -31,7 +31,6 @@ data class PendingReport(
     val severity: Severity,
     val location: String,
     val state: DeliveryState,
-    val attempted: Boolean,
     val createdAt: Long,
 )
 
@@ -51,7 +50,6 @@ class PendingReportStore @Inject constructor(
                 severity = Severity.valueOf(entity.severity),
                 location = entity.location,
                 state = DeliveryState.valueOf(entity.state),
-                attempted = entity.attempted,
                 createdAt = entity.createdAt,
             )
         }
@@ -83,7 +81,6 @@ class PendingReportStore @Inject constructor(
             location = input.location,
             photoPathsJson = json.encodeToString(copied),
             state = DeliveryState.WAITING.name,
-            attempted = false,
             createdAt = System.currentTimeMillis(),
         ))
         schedule(id, replace = false)
@@ -111,7 +108,7 @@ class PendingReportStore @Inject constructor(
 
     override suspend fun discard(id: String) {
         val item = dao.get(id) ?: return
-        if (!item.attempted || item.state == DeliveryState.NEEDS_ATTENTION.name) {
+        if (item.state == DeliveryState.NEEDS_ATTENTION.name) {
             workManager.cancelUniqueWork(workName(id))
             complete(id)
         }

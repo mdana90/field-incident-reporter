@@ -19,7 +19,6 @@ data class PendingReportEntity(
     val location: String,
     val photoPathsJson: String,
     val state: String,
-    val attempted: Boolean,
     val createdAt: Long,
 )
 
@@ -37,7 +36,7 @@ interface PendingReportDao {
     @Query("UPDATE pending_reports SET state = :state WHERE id = :id")
     suspend fun updateState(id: String, state: String)
 
-    @Query("UPDATE pending_reports SET state = 'SENDING', attempted = 1 WHERE id = :id")
+    @Query("UPDATE pending_reports SET state = 'SENDING' WHERE id = :id")
     suspend fun markSending(id: String)
 
     @Query("DELETE FROM pending_reports WHERE id = :id")

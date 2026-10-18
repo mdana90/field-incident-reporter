@@ -130,6 +130,31 @@ class IncidentFormViewModelTest {
         assertEquals(0, repository.gets)
     }
 
+    @Test fun cancelledCameraCaptureDeletesItsFile() = runTest(dispatcher) {
+        val photo = files.newFile("cancelled.jpg")
+        val viewModel = viewModel(SavedStateHandle(mapOf("id" to "")))
+
+        viewModel.cameraResult(photo.absolutePath, success = false)
+
+        assertFalse(photo.exists())
+        assertTrue(viewModel.state.value.photos.isEmpty())
+    }
+
+    @Test fun createDraftRestoresSelectedCameraPhoto() = runTest(dispatcher) {
+        val photo = files.newFile("captured.jpg")
+        val handle = SavedStateHandle(mapOf("id" to ""))
+        val first = viewModel(handle)
+        first.title("Changed pipe")
+        first.cameraResult(photo.absolutePath, success = true)
+        advanceUntilIdle()
+        val restoredHandle = SavedStateHandle(handle.keys().associateWith { handle.get<Any?>(it) })
+
+        val restored = viewModel(restoredHandle)
+
+        assertEquals("Changed pipe", restored.state.value.title)
+        assertEquals(listOf(photo.absolutePath), restored.state.value.photos.mapNotNull { it.localFile?.absolutePath })
+    }
+
     private fun viewModel(
         handle: SavedStateHandle,
         repository: FakeIncidentRepository = FakeIncidentRepository(),
