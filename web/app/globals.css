@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/* Tokens copied from docs/web-dashboard-design.html */
+@theme {
+  --color-ink: #183038;
+  --color-muted: #667b80;
+  --color-line: #e2eae9;
+  --color-canvas: #eaf1ef;
+  --color-teal: #006e68;
+  --color-teal-dark: #005550;
+  --color-teal-soft: #e6f4f0;
+  --color-red: #a8362e;
+  --color-red-soft: #fceae7;
+  --color-amber: #96600d;
+  --color-amber-soft: #fff2db;
+  --font-sans: Inter, Roboto, Arial, sans-serif;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
