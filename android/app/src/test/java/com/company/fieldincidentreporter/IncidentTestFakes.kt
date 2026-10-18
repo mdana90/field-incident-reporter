@@ -53,9 +53,13 @@ internal class FakeDraftReports : DraftReports {
     val saves = mutableListOf<Pair<ReportInput, DraftState>>()
     val deletes = mutableListOf<String>()
     var saveFailure: Exception? = null
+    var getFailure: Exception? = null
 
     override fun observe(): Flow<List<DraftReport>> = flow
-    override suspend fun get(id: String): DraftReport? = rows[id]
+    override suspend fun get(id: String): DraftReport? {
+        getFailure?.let { throw it }
+        return rows[id]
+    }
     override suspend fun save(input: ReportInput, state: DraftState) {
         saveFailure?.let { throw it }
         val id = requireNotNull(input.clientRequestId)

@@ -113,12 +113,12 @@ fun IncidentFormScreen(
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!editing && !state.unconfirmed) OutlinedButton(
                     onClick = viewModel::saveDraft,
-                    enabled = !state.saving && !state.loading,
+                    enabled = !state.saving && !state.loading && !state.loadError,
                     modifier = Modifier.weight(1f),
                 ) { Text("Save draft") }
                 Button(
                     onClick = viewModel::sendReport,
-                    enabled = !state.saving && !state.loading,
+                    enabled = !state.saving && !state.loading && !state.loadError,
                     modifier = Modifier.weight(1f),
                 ) {
                     if (state.saving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -129,7 +129,7 @@ fun IncidentFormScreen(
     ) { padding ->
         if (state.loading) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        } else if ((editing || savedDraft) && state.error != null && state.photos.isEmpty() && !state.dirty) {
+        } else if (state.loadError || (editing && state.error != null && state.photos.isEmpty() && !state.dirty)) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(state.error.orEmpty())

@@ -42,6 +42,7 @@ data class FormUiState(
     val location: String = "",
     val photos: List<FormPhoto> = emptyList(),
     val loading: Boolean = false,
+    val loadError: Boolean = false,
     val saving: Boolean = false,
     val dirty: Boolean = false,
     val error: String? = null,
@@ -77,17 +78,21 @@ class IncidentFormViewModel @Inject constructor(
     private val logger = Logger.getLogger(IncidentFormViewModel::class.java.name)
     val editId = savedStateHandle.get<String>("id")?.takeIf(String::isNotBlank)
     val draftId = savedStateHandle.get<String>("draftId")?.takeIf(String::isNotBlank)
+    private val hadRequestId = !savedStateHandle.get<String>("clientRequestId").isNullOrBlank()
     private val requestId: String = draftId ?: savedStateHandle["clientRequestId"]
         ?: UUID.randomUUID().toString().also { savedStateHandle["clientRequestId"] = it }
     private val persistedDraftId = draftId ?: if (savedStateHandle.get<Boolean>("draftStored") == true) requestId else null
+    private val shouldCheckDraft = editId == null && (draftId != null || hadRequestId)
     private val restored = restoreForm()
     private var savedInput: ReportInput? = null
-    private val _state = MutableStateFlow(restored ?: FormUiState(loading = editId != null || draftId != null))
+    private val _state = MutableStateFlow((restored ?: FormUiState()).copy(
+        loading = if (editId != null) restored == null else shouldCheckDraft,
+    ))
     val state = _state.asStateFlow()
 
     init {
         when {
-            persistedDraftId != null -> loadDraft()
+            shouldCheckDraft -> loadDraft()
             editId != null && restored == null -> loadIncident()
         }
     }
@@ -114,8 +119,11 @@ class IncidentFormViewModel @Inject constructor(
 
     fun discardChanges() {
         val retained = savedInput?.newPhotos.orEmpty().toSet()
-        if (savedInput == null) photoStorage.deleteDraft(requestId)
-        else _state.value.photos.mapNotNull(FormPhoto::localFile).filterNot { it in retained }.forEach(photoStorage::deletePhoto)
+        if (savedInput == null) {
+            if (persistedDraftId == null && !_state.value.loading && !_state.value.loadError) photoStorage.deleteDraft(requestId)
+        } else {
+            _state.value.photos.mapNotNull(FormPhoto::localFile).filterNot { it in retained }.forEach(photoStorage::deletePhoto)
+        }
         savedStateHandle["draftExists"] = false
     }
 
@@ -123,11 +131,14 @@ class IncidentFormViewModel @Inject constructor(
 
     private fun loadDraft() {
         viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = null) }
+            _state.update { it.copy(loading = true, loadError = false, error = null) }
             try {
-                val draft = drafts.get(requireNotNull(persistedDraftId))
+                val draft = drafts.get(requestId)
                 if (draft == null) {
-                    _state.update { it.copy(loading = false, error = "Saved draft could not be found.") }
+                    _state.update {
+                        if (persistedDraftId == null) it.copy(loading = false)
+                        else it.copy(loading = false, loadError = true, error = "Saved draft could not be found.")
+                    }
                     return@launch
                 }
                 savedInput = draft.input
@@ -141,6 +152,7 @@ class IncidentFormViewModel @Inject constructor(
                 val inProgress = restored?.takeIf { it.dirty && draft.state == DraftState.DRAFT }
                 _state.value = (inProgress ?: savedForm).copy(
                     loading = false,
+                    loadError = false,
                     unconfirmed = draft.state == DraftState.UNCONFIRMED,
                     hasSavedDraft = true,
                     dirty = inProgress != null,
@@ -148,7 +160,7 @@ class IncidentFormViewModel @Inject constructor(
                 persistForm()
             } catch (failure: Exception) {
                 logger.log(Level.WARNING, "Failed to load draft", failure)
-                _state.update { it.copy(loading = false, error = "Could not open this saved draft. Try again.") }
+                _state.update { it.copy(loading = false, loadError = true, error = "Could not check saved drafts on this device. Try again.") }
             }
         }
     }
@@ -175,12 +187,12 @@ class IncidentFormViewModel @Inject constructor(
     }
 
     fun retryLoad() {
-        if (persistedDraftId != null) loadDraft() else if (editId != null) loadIncident()
+        if (editId != null) loadIncident() else loadDraft()
     }
 
-    private fun canChangePhotos() = !_state.value.saving && !_state.value.loading && !_state.value.unconfirmed
+    private fun canChangePhotos() = !_state.value.saving && !_state.value.loading && !_state.value.loadError && !_state.value.unconfirmed
     private fun changeForm(change: (FormUiState) -> FormUiState) {
-        if (_state.value.saving || _state.value.loading || _state.value.unconfirmed) return
+        if (_state.value.saving || _state.value.loading || _state.value.loadError || _state.value.unconfirmed) return
         _state.update(change)
         persistForm()
     }
@@ -222,7 +234,7 @@ class IncidentFormViewModel @Inject constructor(
 
     private fun submit(send: Boolean) {
         val current = _state.value
-        if (current.saving || current.loading || current.savedId != null || current.draftSaved || current.sendUnconfirmed) return
+        if (current.saving || current.loading || current.loadError || current.savedId != null || current.draftSaved || current.sendUnconfirmed) return
         if (current.unconfirmed && !send) return
         val errors = validateReport(current.title, current.description, current.severity, current.location, current.photos.size)
         if (errors.isNotEmpty()) {
@@ -257,6 +269,7 @@ class IncidentFormViewModel @Inject constructor(
                             markedUnconfirmed = true
                             removeOldPhotos(payload)
                             savedInput = payload
+                            persistForm()
                         }
                         try {
                             val saved = repository.create(payload)
@@ -285,6 +298,7 @@ class IncidentFormViewModel @Inject constructor(
                         unconfirmed = markedUnconfirmed,
                         error = when {
                             editId != null -> failure.userMessage()
+                            failure is java.io.IOException && failure.message?.contains("photo", true) == true && markedUnconfirmed -> "A photo in this draft is missing or invalid. Delete the draft and report again."
                             failure is java.io.IOException && failure.message?.contains("photo", true) == true -> "A selected photo is missing or invalid. Choose it again before sending."
                             else -> "Could not save the report on this device. Try again."
                         },

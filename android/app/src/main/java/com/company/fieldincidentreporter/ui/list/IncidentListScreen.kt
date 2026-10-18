@@ -144,6 +144,7 @@ fun IncidentListScreen(
 @Composable
 private fun DraftCard(report: DraftReport, onOpen: () -> Unit, onDelete: () -> Unit) {
     Card(
+        onClick = onOpen,
         colors = CardDefaults.cardColors(containerColor = TealSoft),
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth(),

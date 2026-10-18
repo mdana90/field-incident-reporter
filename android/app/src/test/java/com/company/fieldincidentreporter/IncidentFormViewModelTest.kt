@@ -76,6 +76,7 @@ class IncidentFormViewModelTest {
         val repository = FakeIncidentRepository()
         val drafts = FakeDraftReports()
         val form = viewModel(draftHandle(), repository, drafts)
+        runCurrent()
 
         form.saveDraft()
         advanceUntilIdle()
@@ -110,6 +111,7 @@ class IncidentFormViewModelTest {
         val repository = FakeIncidentRepository().apply { createResult = { response.await() } }
         val drafts = FakeDraftReports()
         val form = viewModel(draftHandle(), repository, drafts)
+        runCurrent()
 
         form.sendReport()
         runCurrent()
@@ -125,11 +127,43 @@ class IncidentFormViewModelTest {
         assertEquals(null, drafts.get("stable-request-id"))
     }
 
+    @Test fun inFlightSendRestoresAsLockedFromRoomEvenWithStaleSavedState() = runTest(dispatcher) {
+        val response = CompletableDeferred<com.company.fieldincidentreporter.model.Incident>()
+        val repository = FakeIncidentRepository().apply { createResult = { response.await() } }
+        val drafts = FakeDraftReports()
+        val handle = draftHandle()
+        val first = viewModel(handle, repository, drafts)
+        runCurrent()
+
+        first.sendReport()
+        runCurrent()
+        assertEquals(DraftState.UNCONFIRMED, drafts.get("stable-request-id")?.state)
+        assertEquals(true, handle.get<Boolean>("draftStored"))
+
+        val staleHandle = SavedStateHandle(handle.keys().associateWith { handle.get<Any?>(it) })
+        staleHandle["draftStored"] = false
+        val restored = viewModel(staleHandle, repository, drafts)
+        runCurrent()
+        assertTrue(restored.state.value.unconfirmed)
+        assertFalse(restored.state.value.loading)
+
+        restored.title("Changed after restart")
+        restored.saveDraft()
+        runCurrent()
+        assertEquals("Pipe", restored.state.value.title)
+        assertEquals(DraftState.UNCONFIRMED, drafts.get("stable-request-id")?.state)
+        assertEquals(1, drafts.saves.size)
+
+        response.complete(testIncident())
+        advanceUntilIdle()
+    }
+
     @Test fun connectionAndServerFailuresKeepUnconfirmedDraft() = runTest(dispatcher) {
         for (failure in listOf(IOException("offline"), httpFailure(503))) {
             val repository = FakeIncidentRepository().apply { createResult = { throw failure } }
             val drafts = FakeDraftReports()
             val form = viewModel(draftHandle(), repository, drafts)
+            runCurrent()
 
             form.sendReport()
             advanceUntilIdle()
@@ -163,6 +197,7 @@ class IncidentFormViewModelTest {
         val repository = FakeIncidentRepository().apply { createResult = { throw httpFailure(400) } }
         val drafts = FakeDraftReports()
         val form = viewModel(draftHandle(), repository, drafts)
+        runCurrent()
 
         form.sendReport()
         advanceUntilIdle()
@@ -177,6 +212,7 @@ class IncidentFormViewModelTest {
         val repository = FakeIncidentRepository()
         val drafts = FakeDraftReports()
         val form = viewModel(draftHandle(), repository, drafts)
+        runCurrent()
         val missing = form.state.value.photos.single().localFile!!
         missing.delete()
 
@@ -188,10 +224,45 @@ class IncidentFormViewModelTest {
         assertTrue(form.state.value.error?.contains("photo") == true)
     }
 
+    @Test fun lockedDraftWithMissingPhotoExplainsRecovery() = runTest(dispatcher) {
+        val drafts = FakeDraftReports()
+        val missing = photo("missing-locked.jpg")
+        drafts.save(input(listOf(missing)), DraftState.UNCONFIRMED)
+        missing.delete()
+        val repository = FakeIncidentRepository()
+        val form = viewModel(SavedStateHandle(mapOf("draftId" to "stable-request-id")), repository, drafts)
+        advanceUntilIdle()
+
+        form.sendReport()
+        advanceUntilIdle()
+
+        assertTrue(repository.creates.isEmpty())
+        assertEquals(DraftState.UNCONFIRMED, drafts.get("stable-request-id")?.state)
+        assertTrue(form.state.value.error?.contains("Delete the draft and report again") == true)
+    }
+
+    @Test fun backAfterDraftLoadFailureDoesNotDeleteItsPhotos() = runTest(dispatcher) {
+        val photo = photo("saved-during-load-error.jpg")
+        photoStore.onDeleteDraft = { photo.delete() }
+        val drafts = FakeDraftReports().apply { getFailure = IOException("database unavailable") }
+        val form = viewModel(SavedStateHandle(mapOf("draftId" to "stable-request-id")), drafts = drafts)
+        form.discardChanges()
+        assertTrue(photo.exists())
+        assertTrue(photoStore.deletedDrafts.isEmpty())
+        advanceUntilIdle()
+        assertTrue(form.state.value.loadError)
+
+        form.discardChanges()
+
+        assertTrue(photo.exists())
+        assertTrue(photoStore.deletedDrafts.isEmpty())
+    }
+
     @Test fun localWriteFailureBlocksSend() = runTest(dispatcher) {
         val repository = FakeIncidentRepository()
         val drafts = FakeDraftReports().apply { saveFailure = IOException("disk full") }
         val form = viewModel(draftHandle(), repository, drafts)
+        runCurrent()
 
         form.sendReport()
         advanceUntilIdle()
