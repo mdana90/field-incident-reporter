@@ -2,14 +2,17 @@ package com.company.fieldincidentreporter
 
 import com.company.fieldincidentreporter.data.IncidentRepository
 import com.company.fieldincidentreporter.data.ReportInput
+import com.company.fieldincidentreporter.data.resultOf
 import com.company.fieldincidentreporter.data.offline.DraftReport
 import com.company.fieldincidentreporter.data.offline.DraftReports
 import com.company.fieldincidentreporter.data.offline.DraftState
 import com.company.fieldincidentreporter.model.Incident
+import com.company.fieldincidentreporter.model.Result
 import com.company.fieldincidentreporter.model.Severity
 import com.company.fieldincidentreporter.model.Status
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 
 internal fun testIncident(id: String = "incident-1") = Incident(
     id = id,
@@ -31,20 +34,20 @@ internal class FakeIncidentRepository : IncidentRepository {
     var createResult: suspend (ReportInput) -> Incident = { testIncident() }
     var updateResult: suspend (ReportInput) -> Incident = { testIncident() }
 
-    override suspend fun list() = listResult()
-    override suspend fun get(id: String): Incident {
+    override suspend fun list() = resultOf { listResult() }
+    override suspend fun get(id: String): Result<Incident> {
         gets++
-        return testIncident(id)
+        return Result.Success(testIncident(id))
     }
-    override suspend fun create(input: ReportInput): Incident {
+    override suspend fun create(input: ReportInput): Result<Incident> {
         creates += input
-        return createResult(input)
+        return resultOf { createResult(input) }
     }
-    override suspend fun update(id: String, input: ReportInput): Incident {
+    override suspend fun update(id: String, input: ReportInput): Result<Incident> {
         updates += input
-        return updateResult(input)
+        return resultOf { updateResult(input) }
     }
-    override suspend fun delete(id: String) = Unit
+    override suspend fun delete(id: String): Result<Unit> = Result.Success(Unit)
 }
 
 internal class FakeDraftReports : DraftReports {
@@ -55,19 +58,21 @@ internal class FakeDraftReports : DraftReports {
     var saveFailure: Exception? = null
     var getFailure: Exception? = null
 
-    override fun observe(): Flow<List<DraftReport>> = flow
-    override suspend fun get(id: String): DraftReport? {
+    fun stored(id: String): DraftReport? = rows[id]
+
+    override fun observe(): Flow<Result<List<DraftReport>>> = flow.map { Result.Success(it) }
+    override suspend fun get(id: String): Result<DraftReport?> = resultOf {
         getFailure?.let { throw it }
-        return rows[id]
+        rows[id]
     }
-    override suspend fun save(input: ReportInput, state: DraftState) {
+    override suspend fun save(input: ReportInput, state: DraftState): Result<Unit> = resultOf {
         saveFailure?.let { throw it }
         val id = requireNotNull(input.clientRequestId)
         saves += input to state
         rows[id] = DraftReport(id, input, state, rows[id]?.createdAt ?: 1L)
         flow.value = rows.values.toList()
     }
-    override suspend fun delete(id: String) {
+    override suspend fun delete(id: String): Result<Unit> = resultOf {
         deletes += id
         rows.remove(id)
         flow.value = rows.values.toList()

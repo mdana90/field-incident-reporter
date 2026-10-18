@@ -6,12 +6,9 @@ import com.company.fieldincidentreporter.data.IncidentRepository
 import com.company.fieldincidentreporter.data.offline.DraftReport
 import com.company.fieldincidentreporter.data.offline.DraftReports
 import com.company.fieldincidentreporter.model.Incident
-import com.company.fieldincidentreporter.ui.userMessage
+import com.company.fieldincidentreporter.model.Result
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import java.util.logging.Logger
-import java.util.logging.Level
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,27 +29,23 @@ class IncidentListViewModel @Inject constructor(
     private val repository: IncidentRepository,
     private val drafts: DraftReports,
 ) : ViewModel() {
-    private val logger = Logger.getLogger(IncidentListViewModel::class.java.name)
     private val _state = MutableStateFlow(ListUiState())
     val state = _state.asStateFlow()
     private var refreshJob: Job? = null
 
     init {
         viewModelScope.launch {
-            try {
-                drafts.observe().collect { reports -> _state.update { it.copy(drafts = reports, draftError = null) } }
-            } catch (failure: Exception) {
-                logger.log(Level.WARNING, "Failed to load drafts", failure)
-                _state.update { it.copy(draftError = "Could not load saved drafts on this device.") }
+            drafts.observe().collect { result ->
+                when (result) {
+                    is Result.Success -> _state.update { it.copy(drafts = result.data, draftError = null) }
+                    is Result.Error -> _state.update { it.copy(draftError = "Could not load saved drafts on this device.") }
+                }
             }
         }
     }
 
     fun deleteDraft(id: String) = viewModelScope.launch {
-        try {
-            drafts.delete(id)
-        } catch (failure: Exception) {
-            logger.log(Level.WARNING, "Failed to delete draft", failure)
+        if (drafts.delete(id) is Result.Error) {
             _state.update { it.copy(draftError = "Could not delete this draft. Try again.") }
         }
     }
@@ -61,14 +54,9 @@ class IncidentListViewModel @Inject constructor(
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
             _state.update { it.copy(loading = true, refreshing = fromPull, error = null) }
-            try {
-                val incidents = repository.list()
-                _state.update { it.copy(incidents = incidents, loading = false, refreshing = false) }
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: Exception) {
-                logger.log(Level.WARNING, "Failed to load incidents", failure)
-                _state.update { it.copy(loading = false, refreshing = false, error = failure.userMessage()) }
+            when (val result = repository.list()) {
+                is Result.Success -> _state.update { it.copy(incidents = result.data, loading = false, refreshing = false) }
+                is Result.Error -> _state.update { it.copy(loading = false, refreshing = false, error = result.message) }
             }
         }
     }

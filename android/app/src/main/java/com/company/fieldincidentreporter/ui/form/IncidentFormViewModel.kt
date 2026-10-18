@@ -8,16 +8,13 @@ import com.company.fieldincidentreporter.data.CameraPhoto
 import com.company.fieldincidentreporter.data.DraftPhotoStore
 import com.company.fieldincidentreporter.data.IncidentRepository
 import com.company.fieldincidentreporter.data.ReportInput
-import com.company.fieldincidentreporter.data.validateJpegFile
 import com.company.fieldincidentreporter.data.offline.DraftReports
 import com.company.fieldincidentreporter.data.offline.DraftState
+import com.company.fieldincidentreporter.model.Result
 import com.company.fieldincidentreporter.model.Severity
-import com.company.fieldincidentreporter.ui.userMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import java.util.UUID
-import java.util.logging.Level
-import java.util.logging.Logger
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,6 +24,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import retrofit2.HttpException
+import timber.log.Timber
 
 data class FormPhoto(val id: String? = null, val url: String? = null, val localFile: File? = null) {
     val key: String get() = id ?: localFile?.path.orEmpty()
@@ -75,7 +73,6 @@ class IncidentFormViewModel @Inject constructor(
     private val drafts: DraftReports,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    private val logger = Logger.getLogger(IncidentFormViewModel::class.java.name)
     val editId = savedStateHandle.get<String>("id")?.takeIf(String::isNotBlank)
     val draftId = savedStateHandle.get<String>("draftId")?.takeIf(String::isNotBlank)
     private val hadRequestId = !savedStateHandle.get<String>("clientRequestId").isNullOrBlank()
@@ -106,13 +103,12 @@ class IncidentFormViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
-            try {
-                photoStorage.acceptCameraPhoto(requestId, file)
-                addLocalPhoto(file)
-            } catch (failure: Exception) {
-                photoStorage.deletePhoto(file)
-                logger.log(Level.WARNING, "Failed to add camera photo", failure)
-                _state.update { it.copy(error = failure.userMessage()) }
+            when (val result = photoStorage.acceptCameraPhoto(requestId, file)) {
+                is Result.Success -> addLocalPhoto(result.data)
+                is Result.Error -> {
+                    photoStorage.deletePhoto(file)
+                    _state.update { it.copy(error = result.message) }
+                }
             }
         }
     }
@@ -132,56 +128,57 @@ class IncidentFormViewModel @Inject constructor(
     private fun loadDraft() {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, loadError = false, error = null) }
-            try {
-                val draft = drafts.get(requestId)
-                if (draft == null) {
-                    _state.update {
-                        if (persistedDraftId == null) it.copy(loading = false)
-                        else it.copy(loading = false, loadError = true, error = "Saved draft could not be found.")
-                    }
+            val draft = when (val result = drafts.get(requestId)) {
+                is Result.Success -> result.data
+                is Result.Error -> {
+                    _state.update { it.copy(loading = false, loadError = true, error = "Could not check saved drafts on this device. Try again.") }
                     return@launch
                 }
-                savedInput = draft.input
-                val savedForm = FormUiState(
-                    title = draft.input.title,
-                    description = draft.input.description,
-                    severity = draft.input.severity,
-                    location = draft.input.location,
-                    photos = draft.input.newPhotos.map { FormPhoto(localFile = it) },
-                )
-                val inProgress = restored?.takeIf { it.dirty && draft.state == DraftState.DRAFT }
-                _state.value = (inProgress ?: savedForm).copy(
-                    loading = false,
-                    loadError = false,
-                    unconfirmed = draft.state == DraftState.UNCONFIRMED,
-                    hasSavedDraft = true,
-                    dirty = inProgress != null,
-                )
-                persistForm()
-            } catch (failure: Exception) {
-                logger.log(Level.WARNING, "Failed to load draft", failure)
-                _state.update { it.copy(loading = false, loadError = true, error = "Could not check saved drafts on this device. Try again.") }
             }
+            if (draft == null) {
+                _state.update {
+                    if (persistedDraftId == null) it.copy(loading = false)
+                    else it.copy(loading = false, loadError = true, error = "Saved draft could not be found.")
+                }
+                return@launch
+            }
+            savedInput = draft.input
+            val savedForm = FormUiState(
+                title = draft.input.title,
+                description = draft.input.description,
+                severity = draft.input.severity,
+                location = draft.input.location,
+                photos = draft.input.newPhotos.map { FormPhoto(localFile = it) },
+            )
+            val inProgress = restored?.takeIf { it.dirty && draft.state == DraftState.DRAFT }
+            _state.value = (inProgress ?: savedForm).copy(
+                loading = false,
+                loadError = false,
+                unconfirmed = draft.state == DraftState.UNCONFIRMED,
+                hasSavedDraft = true,
+                dirty = inProgress != null,
+            )
+            persistForm()
         }
     }
 
     private fun loadIncident() {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
-            try {
-                val incident = repository.get(requireNotNull(editId))
-                _state.update {
-                    it.copy(
-                        title = incident.title, description = incident.description,
-                        severity = incident.severity, location = incident.location,
-                        photos = incident.photos.map { photo -> FormPhoto(id = photo.id, url = photo.url) },
-                        loading = false,
-                    )
+            when (val result = repository.get(requireNotNull(editId))) {
+                is Result.Success -> {
+                    val incident = result.data
+                    _state.update {
+                        it.copy(
+                            title = incident.title, description = incident.description,
+                            severity = incident.severity, location = incident.location,
+                            photos = incident.photos.map { photo -> FormPhoto(id = photo.id, url = photo.url) },
+                            loading = false,
+                        )
+                    }
+                    persistForm()
                 }
-                persistForm()
-            } catch (failure: Exception) {
-                logger.log(Level.WARNING, "Failed to load incident", failure)
-                _state.update { it.copy(loading = false, error = failure.userMessage()) }
+                is Result.Error -> _state.update { it.copy(loading = false, error = result.message) }
             }
         }
     }
@@ -205,11 +202,9 @@ class IncidentFormViewModel @Inject constructor(
     fun addPhoto(uri: Uri) {
         if (!canChangePhotos() || _state.value.photos.size >= 3) return
         viewModelScope.launch {
-            try {
-                addLocalPhoto(photoStorage.copyPickedPhoto(requestId, uri))
-            } catch (failure: Exception) {
-                logger.log(Level.WARNING, "Failed to add photo", failure)
-                _state.update { it.copy(error = failure.userMessage()) }
+            when (val result = photoStorage.copyPickedPhoto(requestId, uri)) {
+                is Result.Success -> addLocalPhoto(result.data)
+                is Result.Error -> _state.update { it.copy(error = result.message) }
             }
         }
     }
@@ -247,65 +242,76 @@ class IncidentFormViewModel @Inject constructor(
             newPhotos = current.photos.mapNotNull(FormPhoto::localFile),
             keepPhotoIds = current.photos.mapNotNull(FormPhoto::id), clientRequestId = requestId,
         )
+        val payload = if (current.unconfirmed) savedInput ?: return else input
         _state.update { it.copy(saving = true, error = null) }
         viewModelScope.launch {
-            var markedUnconfirmed = current.unconfirmed
-            try {
-                if (editId != null) {
-                    val saved = repository.update(editId, input)
-                    clearDraftFiles()
-                    _state.update { it.copy(saving = false, savedId = saved.id, dirty = false) }
-                } else {
-                    input.newPhotos.forEach(::validateJpegFile)
-                    if (!send) {
-                        drafts.save(input, DraftState.DRAFT)
-                        removeOldPhotos(input)
-                        savedInput = input
-                        _state.update { it.copy(saving = false, dirty = false, draftSaved = true, hasSavedDraft = true) }
-                    } else {
-                        val payload = if (current.unconfirmed) requireNotNull(savedInput) else input
-                        if (!current.unconfirmed) {
-                            drafts.save(payload, DraftState.UNCONFIRMED)
-                            markedUnconfirmed = true
-                            removeOldPhotos(payload)
-                            savedInput = payload
-                            persistForm()
-                        }
-                        try {
-                            val saved = repository.create(payload)
-                            drafts.delete(requestId)
-                            savedInput = null
-                            savedStateHandle["draftExists"] = false
-                            _state.update { it.copy(saving = false, savedId = saved.id, dirty = false) }
-                        } catch (failure: Exception) {
-                            logger.log(Level.WARNING, "Submission not confirmed", failure)
-                            if (failure is HttpException && failure.code() in listOf(400, 413, 422)) {
-                                drafts.save(payload, DraftState.DRAFT)
-                                markedUnconfirmed = false
-                                _state.update { it.copy(saving = false, unconfirmed = false, hasSavedDraft = true, error = failure.userMessage()) }
-                            } else {
-                                _state.update { it.copy(saving = false, unconfirmed = true, hasSavedDraft = true, sendUnconfirmed = true, dirty = false) }
-                            }
-                        }
-                    }
-                }
+            if (editId != null) {
+                updateIncident(editId, input)
+                return@launch
+            }
+            if (photoStorage.validatePhotos(input.newPhotos) is Result.Error) {
+                val message = if (current.unconfirmed) "A photo in this draft is missing or invalid. Delete the draft and report again."
+                else "A selected photo is missing or invalid. Choose it again before sending."
+                _state.update { it.copy(saving = false, error = message) }
+                return@launch
+            }
+            if (send) sendToServer(payload, alreadyUnconfirmed = current.unconfirmed) else storeDraft(input)
+        }
+    }
+
+    private suspend fun updateIncident(id: String, input: ReportInput) {
+        when (val result = repository.update(id, input)) {
+            is Result.Success -> {
+                clearDraftFiles()
+                _state.update { it.copy(saving = false, savedId = result.data.id, dirty = false) }
                 persistForm()
-            } catch (failure: Exception) {
-                logger.log(Level.WARNING, "Failed to save report", failure)
-                _state.update {
-                    it.copy(
-                        saving = false,
-                        unconfirmed = markedUnconfirmed,
-                        error = when {
-                            editId != null -> failure.userMessage()
-                            failure is java.io.IOException && failure.message?.contains("photo", true) == true && markedUnconfirmed -> "A photo in this draft is missing or invalid. Delete the draft and report again."
-                            failure is java.io.IOException && failure.message?.contains("photo", true) == true -> "A selected photo is missing or invalid. Choose it again before sending."
-                            else -> "Could not save the report on this device. Try again."
-                        },
-                    )
+            }
+            is Result.Error -> _state.update { it.copy(saving = false, error = result.message) }
+        }
+    }
+
+    private suspend fun storeDraft(input: ReportInput) {
+        if (drafts.save(input, DraftState.DRAFT) is Result.Error) {
+            _state.update { it.copy(saving = false, error = DEVICE_SAVE_ERROR) }
+            return
+        }
+        removeOldPhotos(input)
+        savedInput = input
+        _state.update { it.copy(saving = false, dirty = false, draftSaved = true, hasSavedDraft = true) }
+        persistForm()
+    }
+
+    private suspend fun sendToServer(payload: ReportInput, alreadyUnconfirmed: Boolean) {
+        if (!alreadyUnconfirmed) {
+            if (drafts.save(payload, DraftState.UNCONFIRMED) is Result.Error) {
+                _state.update { it.copy(saving = false, error = DEVICE_SAVE_ERROR) }
+                return
+            }
+            removeOldPhotos(payload)
+            savedInput = payload
+            persistForm()
+        }
+        when (val result = repository.create(payload)) {
+            is Result.Success -> {
+                if (drafts.delete(requestId) is Result.Error) {
+                    _state.update { it.copy(saving = false, unconfirmed = true, error = DEVICE_SAVE_ERROR) }
+                    return
                 }
+                savedInput = null
+                savedStateHandle["draftExists"] = false
+                _state.update { it.copy(saving = false, savedId = result.data.id, dirty = false) }
+            }
+            is Result.Error -> if ((result.exception as? HttpException)?.code() in listOf(400, 413, 422)) {
+                if (drafts.save(payload, DraftState.DRAFT) is Result.Error) {
+                    _state.update { it.copy(saving = false, unconfirmed = true, error = DEVICE_SAVE_ERROR) }
+                    return
+                }
+                _state.update { it.copy(saving = false, unconfirmed = false, hasSavedDraft = true, error = result.message) }
+            } else {
+                _state.update { it.copy(saving = false, unconfirmed = true, hasSavedDraft = true, sendUnconfirmed = true, dirty = false) }
             }
         }
+        persistForm()
     }
 
     private fun removeOldPhotos(input: ReportInput) {
@@ -314,7 +320,7 @@ class IncidentFormViewModel @Inject constructor(
 
     private fun clearDraftFiles() {
         runCatching { photoStorage.deleteDraft(requestId) }
-            .onFailure { logger.log(Level.WARNING, "Failed to delete draft photos", it) }
+            .onFailure { Timber.w(it, "Failed to delete draft photos") }
     }
 
     private fun persistForm() {
@@ -353,5 +359,9 @@ class IncidentFormViewModel @Inject constructor(
             savedId = savedStateHandle["draftSavedId"],
             hasSavedDraft = savedStateHandle["draftStored"] ?: false,
         )
+    }
+
+    companion object {
+        private const val DEVICE_SAVE_ERROR = "Could not save the report on this device. Try again."
     }
 }

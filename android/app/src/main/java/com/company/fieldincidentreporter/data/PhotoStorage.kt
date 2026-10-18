@@ -3,6 +3,7 @@ package com.company.fieldincidentreporter.data
 import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.company.fieldincidentreporter.model.Result
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
@@ -15,8 +16,9 @@ data class CameraPhoto(val uri: Uri, val file: File)
 
 interface DraftPhotoStore {
     fun newCameraPhoto(requestId: String): CameraPhoto
-    suspend fun copyPickedPhoto(requestId: String, uri: Uri): File
-    suspend fun acceptCameraPhoto(requestId: String, file: File): File
+    suspend fun copyPickedPhoto(requestId: String, uri: Uri): Result<File>
+    suspend fun acceptCameraPhoto(requestId: String, file: File): Result<File>
+    suspend fun validatePhotos(files: List<File>): Result<Unit>
     fun deletePhoto(file: File)
     fun deleteDraft(requestId: String)
 }
@@ -31,28 +33,36 @@ class PhotoStorage @Inject constructor(
         return CameraPhoto(uri, file)
     }
 
-    override suspend fun copyPickedPhoto(requestId: String, uri: Uri): File = withContext(Dispatchers.IO) {
-        val mime = context.contentResolver.getType(uri)
-        if (mime != null && mime != "image/jpeg") throw IOException("Photo must be a JPEG")
-        val target = File(draftDirectory(requestId).apply { mkdirs() }, "${UUID.randomUUID()}.jpg")
-        try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                target.outputStream().use { output -> input.copyTo(output) }
-            } ?: throw IOException("Could not read this photo")
-            validateJpegFile(target)
-            target
-        } catch (failure: Exception) {
-            target.delete()
-            throw failure
+    override suspend fun copyPickedPhoto(requestId: String, uri: Uri): Result<File> = resultOf {
+        withContext(Dispatchers.IO) {
+            val mime = context.contentResolver.getType(uri)
+            if (mime != null && mime != "image/jpeg") throw IOException("Photo must be a JPEG")
+            val target = File(draftDirectory(requestId).apply { mkdirs() }, "${UUID.randomUUID()}.jpg")
+            try {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                } ?: throw IOException("Could not read this photo")
+                validateJpegFile(target)
+                target
+            } catch (failure: Exception) {
+                target.delete()
+                throw failure
+            }
         }
     }
 
-    override suspend fun acceptCameraPhoto(requestId: String, file: File): File = withContext(Dispatchers.IO) {
-        if (file.parentFile?.canonicalFile != draftDirectory(requestId).canonicalFile) {
-            throw IOException("Could not read this photo")
+    override suspend fun acceptCameraPhoto(requestId: String, file: File): Result<File> = resultOf {
+        withContext(Dispatchers.IO) {
+            if (file.parentFile?.canonicalFile != draftDirectory(requestId).canonicalFile) {
+                throw IOException("Could not read this photo")
+            }
+            validateJpegFile(file)
+            file
         }
-        validateJpegFile(file)
-        file
+    }
+
+    override suspend fun validatePhotos(files: List<File>): Result<Unit> = resultOf {
+        withContext(Dispatchers.IO) { files.forEach(::validateJpegFile) }
     }
 
     override fun deletePhoto(file: File) { file.delete() }

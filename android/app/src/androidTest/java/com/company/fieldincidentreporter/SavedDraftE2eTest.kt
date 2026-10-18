@@ -21,6 +21,7 @@ import com.company.fieldincidentreporter.data.offline.DraftReport
 import com.company.fieldincidentreporter.data.offline.DraftReports
 import com.company.fieldincidentreporter.data.offline.DraftState
 import com.company.fieldincidentreporter.di.E2eDraftEntryPoint
+import com.company.fieldincidentreporter.model.Result
 import com.company.fieldincidentreporter.model.Severity
 import dagger.hilt.android.EntryPointAccessors
 import java.io.File
@@ -228,12 +229,13 @@ class SavedDraftE2eTest {
             recycle()
         }
         runBlocking {
-            drafts.save(ReportInput(title, "E2E description", Severity.HIGH, "E2E location", listOf(photo), clientRequestId = id), state)
+            val saved = drafts.save(ReportInput(title, "E2E description", Severity.HIGH, "E2E location", listOf(photo), clientRequestId = id), state)
+            check(saved is Result.Success) { "Could not seed draft $id" }
         }
         return Seed(id, title, folder, photo)
     }
 
-    private fun draftRow(id: String): DraftReport? = runBlocking { drafts.get(id) }
+    private fun draftRow(id: String): DraftReport? = runBlocking { (drafts.get(id) as Result.Success).data }
 
     private fun control(mode: String) { get("$baseUrl/__e2e/control?mode=$mode") }
     private fun serverIncidents(): String = get("$baseUrl/incidents")

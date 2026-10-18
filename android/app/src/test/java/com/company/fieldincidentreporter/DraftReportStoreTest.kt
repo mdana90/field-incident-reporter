@@ -5,6 +5,7 @@ import com.company.fieldincidentreporter.data.offline.DraftReportDao
 import com.company.fieldincidentreporter.data.offline.DraftReportEntity
 import com.company.fieldincidentreporter.data.offline.DraftReportStore
 import com.company.fieldincidentreporter.data.offline.DraftState
+import com.company.fieldincidentreporter.model.Result
 import com.company.fieldincidentreporter.model.Severity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,17 +31,19 @@ class DraftReportStoreTest {
         val input = ReportInput("Pipe", "Leaking", Severity.HIGH, "Building A", listOf(selected), clientRequestId = "request-id")
 
         store.save(input, DraftState.DRAFT)
-        val createdAt = store.get("request-id")!!.createdAt
+        val createdAt = store.row("request-id")!!.createdAt
         store.save(input, DraftState.UNCONFIRMED)
 
-        assertEquals(listOf(selected), store.get("request-id")!!.input.newPhotos)
-        assertEquals(DraftState.UNCONFIRMED, store.get("request-id")!!.state)
-        assertEquals(createdAt, store.get("request-id")!!.createdAt)
+        assertEquals(listOf(selected), store.row("request-id")!!.input.newPhotos)
+        assertEquals(DraftState.UNCONFIRMED, store.row("request-id")!!.state)
+        assertEquals(createdAt, store.row("request-id")!!.createdAt)
         assertTrue(unselected.exists())
         store.delete("request-id")
-        assertEquals(null, store.get("request-id"))
+        assertEquals(null, store.row("request-id"))
         assertFalse(folder.exists())
     }
+
+    private suspend fun DraftReportStore.row(id: String) = (get(id) as Result.Success).data
 
     private class FakeDao : DraftReportDao {
         private val rows = linkedMapOf<String, DraftReportEntity>()

@@ -1,6 +1,7 @@
 package com.company.fieldincidentreporter.data
 
 import com.company.fieldincidentreporter.model.Incident
+import com.company.fieldincidentreporter.model.Result
 import com.company.fieldincidentreporter.model.Severity
 import java.io.File
 import javax.inject.Inject
@@ -23,32 +24,32 @@ data class ReportInput(
 )
 
 interface IncidentRepository {
-    suspend fun list(): List<Incident>
-    suspend fun get(id: String): Incident
-    suspend fun create(input: ReportInput): Incident
-    suspend fun update(id: String, input: ReportInput): Incident
-    suspend fun delete(id: String)
+    suspend fun list(): Result<List<Incident>>
+    suspend fun get(id: String): Result<Incident>
+    suspend fun create(input: ReportInput): Result<Incident>
+    suspend fun update(id: String, input: ReportInput): Result<Incident>
+    suspend fun delete(id: String): Result<Unit>
 }
 
 class NetworkIncidentRepository @Inject constructor(
     private val api: IncidentApi,
     private val json: Json,
 ) : IncidentRepository {
-    override suspend fun list() = api.list().map(IncidentDto::toModel)
+    override suspend fun list() = resultOf { api.list().map(IncidentDto::toModel) }
 
-    override suspend fun get(id: String) = api.get(id).toModel()
+    override suspend fun get(id: String) = resultOf { api.get(id).toModel() }
 
-    override suspend fun create(input: ReportInput): Incident {
+    override suspend fun create(input: ReportInput) = resultOf {
         require(!input.clientRequestId.isNullOrBlank())
-        return api.create(fields(input) + ("clientRequestId" to input.clientRequestId.toPart()), photos(input)).toModel()
+        api.create(fields(input) + ("clientRequestId" to input.clientRequestId.toPart()), photos(input)).toModel()
     }
 
-    override suspend fun update(id: String, input: ReportInput): Incident {
+    override suspend fun update(id: String, input: ReportInput) = resultOf {
         val keep = json.encodeToString(input.keepPhotoIds)
-        return api.update(id, fields(input) + ("keepPhotoIds" to keep.toPart()), photos(input)).toModel()
+        api.update(id, fields(input) + ("keepPhotoIds" to keep.toPart()), photos(input)).toModel()
     }
 
-    override suspend fun delete(id: String) = api.delete(id)
+    override suspend fun delete(id: String): Result<Unit> = resultOf { api.delete(id) }
 
     private fun fields(input: ReportInput): Map<String, RequestBody> = mapOf(
         "title" to input.title.toPart(),

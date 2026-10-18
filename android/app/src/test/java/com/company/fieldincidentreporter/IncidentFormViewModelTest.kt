@@ -69,7 +69,7 @@ class IncidentFormViewModelTest {
 
         assertTrue(saved.exists())
         assertFalse(removed.exists())
-        assertEquals(listOf(saved), drafts.get("stable-request-id")?.input?.newPhotos)
+        assertEquals(listOf(saved), drafts.stored("stable-request-id")?.input?.newPhotos)
     }
 
     @Test fun saveDraftPersistsValidFormWithoutSending() = runTest(dispatcher) {
@@ -81,7 +81,7 @@ class IncidentFormViewModelTest {
         form.saveDraft()
         advanceUntilIdle()
 
-        assertEquals(DraftState.DRAFT, drafts.get("stable-request-id")?.state)
+        assertEquals(DraftState.DRAFT, drafts.stored("stable-request-id")?.state)
         assertTrue(repository.creates.isEmpty())
         assertTrue(form.state.value.draftSaved)
         assertTrue(photoStore.deletedDrafts.isEmpty())
@@ -103,7 +103,7 @@ class IncidentFormViewModelTest {
         form.saveDraft()
         advanceUntilIdle()
         assertFalse(original.exists())
-        assertEquals(listOf(replacement), drafts.get("stable-request-id")!!.input.newPhotos)
+        assertEquals(listOf(replacement), drafts.stored("stable-request-id")!!.input.newPhotos)
     }
 
     @Test fun repeatSendWhileWaitingSendsOnlyOnceAndSuccessDeletesDraft() = runTest(dispatcher) {
@@ -118,13 +118,13 @@ class IncidentFormViewModelTest {
         form.sendReport()
         runCurrent()
         assertEquals(1, repository.creates.size)
-        assertEquals(DraftState.UNCONFIRMED, drafts.get("stable-request-id")?.state)
+        assertEquals(DraftState.UNCONFIRMED, drafts.stored("stable-request-id")?.state)
         response.complete(testIncident())
         advanceUntilIdle()
 
         assertEquals("incident-1", form.state.value.savedId)
         assertEquals(listOf("stable-request-id"), drafts.deletes)
-        assertEquals(null, drafts.get("stable-request-id"))
+        assertEquals(null, drafts.stored("stable-request-id"))
     }
 
     @Test fun inFlightSendRestoresAsLockedFromRoomEvenWithStaleSavedState() = runTest(dispatcher) {
@@ -137,7 +137,7 @@ class IncidentFormViewModelTest {
 
         first.sendReport()
         runCurrent()
-        assertEquals(DraftState.UNCONFIRMED, drafts.get("stable-request-id")?.state)
+        assertEquals(DraftState.UNCONFIRMED, drafts.stored("stable-request-id")?.state)
         assertEquals(true, handle.get<Boolean>("draftStored"))
 
         val staleHandle = SavedStateHandle(handle.keys().associateWith { handle.get<Any?>(it) })
@@ -151,7 +151,7 @@ class IncidentFormViewModelTest {
         restored.saveDraft()
         runCurrent()
         assertEquals("Pipe", restored.state.value.title)
-        assertEquals(DraftState.UNCONFIRMED, drafts.get("stable-request-id")?.state)
+        assertEquals(DraftState.UNCONFIRMED, drafts.stored("stable-request-id")?.state)
         assertEquals(1, drafts.saves.size)
 
         response.complete(testIncident())
@@ -169,7 +169,7 @@ class IncidentFormViewModelTest {
             advanceUntilIdle()
 
             assertTrue(form.state.value.sendUnconfirmed)
-            assertEquals(DraftState.UNCONFIRMED, drafts.get("stable-request-id")?.state)
+            assertEquals(DraftState.UNCONFIRMED, drafts.stored("stable-request-id")?.state)
             assertTrue(drafts.deletes.isEmpty())
             assertTrue(photoStore.deletedDrafts.isEmpty())
         }
@@ -202,7 +202,7 @@ class IncidentFormViewModelTest {
         form.sendReport()
         advanceUntilIdle()
 
-        assertEquals(DraftState.DRAFT, drafts.get("stable-request-id")?.state)
+        assertEquals(DraftState.DRAFT, drafts.stored("stable-request-id")?.state)
         assertFalse(form.state.value.unconfirmed)
         assertTrue(form.state.value.error?.contains("check") == true)
         assertTrue(drafts.deletes.isEmpty())
@@ -237,7 +237,7 @@ class IncidentFormViewModelTest {
         advanceUntilIdle()
 
         assertTrue(repository.creates.isEmpty())
-        assertEquals(DraftState.UNCONFIRMED, drafts.get("stable-request-id")?.state)
+        assertEquals(DraftState.UNCONFIRMED, drafts.stored("stable-request-id")?.state)
         assertTrue(form.state.value.error?.contains("Delete the draft and report again") == true)
     }
 

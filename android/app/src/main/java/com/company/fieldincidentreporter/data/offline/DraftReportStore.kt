@@ -1,25 +1,35 @@
 package com.company.fieldincidentreporter.data.offline
 
 import com.company.fieldincidentreporter.data.ReportInput
+import com.company.fieldincidentreporter.data.resultOf
+import com.company.fieldincidentreporter.data.userMessage
+import com.company.fieldincidentreporter.model.Result
 import com.company.fieldincidentreporter.model.Severity
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import timber.log.Timber
 
 class DraftReportStore(
     private val draftsRoot: File,
     private val dao: DraftReportDao,
     private val json: Json,
 ) : DraftReports {
-    override fun observe(): Flow<List<DraftReport>> = dao.observeAll().map { rows -> rows.map(::toDraft) }
+    override fun observe(): Flow<Result<List<DraftReport>>> = dao.observeAll()
+        .map<List<DraftReportEntity>, Result<List<DraftReport>>> { rows -> Result.Success(rows.map(::toDraft)) }
+        .catch { failure ->
+            Timber.w(failure, "Failed to observe drafts")
+            emit(Result.Error(failure, failure.userMessage()))
+        }
 
-    override suspend fun get(id: String): DraftReport? = dao.get(id)?.let(::toDraft)
+    override suspend fun get(id: String): Result<DraftReport?> = resultOf { dao.get(id)?.let(::toDraft) }
 
-    override suspend fun save(input: ReportInput, state: DraftState) {
+    override suspend fun save(input: ReportInput, state: DraftState): Result<Unit> = resultOf {
         val id = requireNotNull(input.clientRequestId)
         val directory = draftDirectory(id)
         require(input.newPhotos.all { it.parentFile == directory && it.name.endsWith(".jpg") })
@@ -35,7 +45,7 @@ class DraftReportStore(
         ))
     }
 
-    override suspend fun delete(id: String) {
+    override suspend fun delete(id: String): Result<Unit> = resultOf {
         dao.delete(id)
         withContext(Dispatchers.IO) { draftDirectory(id).deleteRecursively() }
     }
