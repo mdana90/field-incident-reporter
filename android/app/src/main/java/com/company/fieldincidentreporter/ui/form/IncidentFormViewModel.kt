@@ -10,16 +10,21 @@ import com.company.fieldincidentreporter.data.IncidentRepository
 import com.company.fieldincidentreporter.data.ReportInput
 import com.company.fieldincidentreporter.data.offline.DraftReports
 import com.company.fieldincidentreporter.data.offline.DraftState
+import com.company.fieldincidentreporter.di.ApplicationScope
+import com.company.fieldincidentreporter.di.IoDispatcher
 import com.company.fieldincidentreporter.model.Result
 import com.company.fieldincidentreporter.model.Severity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import java.util.UUID
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -83,6 +88,8 @@ class IncidentFormViewModel @Inject constructor(
     private val repository: IncidentRepository,
     private val photoStorage: DraftPhotoStore,
     private val drafts: DraftReports,
+    @IoDispatcher private val dispatcher: CoroutineDispatcher,
+    @ApplicationScope private val appScope: CoroutineScope,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     // FormRoute args are read by key rather than toRoute(), which needs Robolectric in JVM tests.
@@ -115,14 +122,14 @@ class IncidentFormViewModel @Inject constructor(
     fun cameraResult(path: String, success: Boolean) {
         val file = File(path)
         if (!success || !canChangePhotos() || _state.value.photos.size >= 3) {
-            photoStorage.deletePhoto(file)
+            deleteInBackground { photoStorage.deletePhoto(file) }
             return
         }
         viewModelScope.launch {
-            when (val result = photoStorage.acceptCameraPhoto(requestId, file)) {
+            when (val result = withContext(dispatcher) { photoStorage.acceptCameraPhoto(requestId, file) }) {
                 is Result.Success -> addLocalPhoto(result.data)
                 is Result.Error -> {
-                    photoStorage.deletePhoto(file)
+                    deleteInBackground { photoStorage.deletePhoto(file) }
                     _state.update { it.copy(error = result.message) }
                 }
             }
@@ -132,11 +139,19 @@ class IncidentFormViewModel @Inject constructor(
     fun discardChanges() {
         val retained = savedInput?.newPhotos.orEmpty().toSet()
         if (savedInput == null) {
-            if (persistedDraftId == null && !_state.value.loading && !_state.value.loadError) photoStorage.deleteDraft(requestId)
+            if (persistedDraftId == null && !_state.value.loading && !_state.value.loadError) deleteInBackground { photoStorage.deleteDraft(requestId) }
         } else {
-            _state.value.photos.mapNotNull(FormPhoto::localFile).filterNot { it in retained }.forEach(photoStorage::deletePhoto)
+            val discarded = _state.value.photos.mapNotNull(FormPhoto::localFile).filterNot { it in retained }
+            deleteInBackground { discarded.forEach(photoStorage::deletePhoto) }
         }
         savedStateHandle.remove<String>(KEY_FORM)
+    }
+
+    /** Runs on [appScope] so the cleanup still finishes after the screen closes and [viewModelScope] is cancelled. */
+    private fun deleteInBackground(delete: () -> Unit) {
+        appScope.launch(dispatcher) {
+            runCatching(delete).onFailure { Timber.w(it, "Failed to delete draft photos") }
+        }
     }
 
     fun showError(message: String) = _state.update { it.copy(error = message) }
@@ -144,7 +159,7 @@ class IncidentFormViewModel @Inject constructor(
     private fun loadDraft() {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, loadError = false, error = null) }
-            val draft = when (val result = drafts.get(requestId)) {
+            val draft = when (val result = withContext(dispatcher) { drafts.get(requestId) }) {
                 is Result.Success -> result.data
                 is Result.Error -> {
                     _state.update { it.copy(loading = false, loadError = true, error = "Could not check saved drafts on this device. Try again.") }
@@ -181,7 +196,7 @@ class IncidentFormViewModel @Inject constructor(
     private fun loadIncident() {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
-            when (val result = repository.get(requireNotNull(editId))) {
+            when (val result = withContext(dispatcher) { repository.get(requireNotNull(editId)) }) {
                 is Result.Success -> {
                     val incident = result.data
                     _state.update {
@@ -218,7 +233,7 @@ class IncidentFormViewModel @Inject constructor(
     fun addPhoto(uri: Uri) {
         if (!canChangePhotos() || _state.value.photos.size >= 3) return
         viewModelScope.launch {
-            when (val result = photoStorage.copyPickedPhoto(requestId, uri)) {
+            when (val result = withContext(dispatcher) { photoStorage.copyPickedPhoto(requestId, uri) }) {
                 is Result.Success -> addLocalPhoto(result.data)
                 is Result.Error -> _state.update { it.copy(error = result.message) }
             }
@@ -227,7 +242,7 @@ class IncidentFormViewModel @Inject constructor(
 
     private fun addLocalPhoto(file: File) {
         if (!canChangePhotos() || _state.value.photos.size >= 3) {
-            photoStorage.deletePhoto(file)
+            deleteInBackground { photoStorage.deletePhoto(file) }
             return
         }
         changeForm { it.copy(photos = it.photos + FormPhoto(localFile = file), dirty = true, fieldErrors = it.fieldErrors - "photos") }
@@ -237,7 +252,7 @@ class IncidentFormViewModel @Inject constructor(
         if (!canChangePhotos()) return
         val file = _state.value.photos.firstOrNull { it.key == key }?.localFile
         changeForm { it.copy(photos = it.photos.filterNot { photo -> photo.key == key }, dirty = true) }
-        if (file != null && file !in savedInput?.newPhotos.orEmpty()) photoStorage.deletePhoto(file)
+        if (file != null && file !in savedInput?.newPhotos.orEmpty()) deleteInBackground { photoStorage.deletePhoto(file) }
     }
 
     fun saveDraft() = submit(send = false)
@@ -265,7 +280,7 @@ class IncidentFormViewModel @Inject constructor(
                 updateIncident(editId, input)
                 return@launch
             }
-            if (photoStorage.validatePhotos(input.newPhotos) is Result.Error) {
+            if (withContext(dispatcher) { photoStorage.validatePhotos(input.newPhotos) } is Result.Error) {
                 val message = if (current.unconfirmed) "A photo in this draft is missing or invalid. Delete the draft and report again."
                 else "A selected photo is missing or invalid. Choose it again before sending."
                 _state.update { it.copy(saving = false, error = message) }
@@ -276,7 +291,7 @@ class IncidentFormViewModel @Inject constructor(
     }
 
     private suspend fun updateIncident(id: String, input: ReportInput) {
-        when (val result = repository.update(id, input)) {
+        when (val result = withContext(dispatcher) { repository.update(id, input) }) {
             is Result.Success -> {
                 clearDraftFiles()
                 _state.update { it.copy(saving = false, savedId = result.data.id, dirty = false) }
@@ -287,7 +302,7 @@ class IncidentFormViewModel @Inject constructor(
     }
 
     private suspend fun storeDraft(input: ReportInput) {
-        if (drafts.save(input, DraftState.DRAFT) is Result.Error) {
+        if (withContext(dispatcher) { drafts.save(input, DraftState.DRAFT) } is Result.Error) {
             _state.update { it.copy(saving = false, error = DEVICE_SAVE_ERROR) }
             return
         }
@@ -299,7 +314,7 @@ class IncidentFormViewModel @Inject constructor(
 
     private suspend fun sendToServer(payload: ReportInput, alreadyUnconfirmed: Boolean) {
         if (!alreadyUnconfirmed) {
-            if (drafts.save(payload, DraftState.UNCONFIRMED) is Result.Error) {
+            if (withContext(dispatcher) { drafts.save(payload, DraftState.UNCONFIRMED) } is Result.Error) {
                 _state.update { it.copy(saving = false, error = DEVICE_SAVE_ERROR) }
                 return
             }
@@ -307,9 +322,9 @@ class IncidentFormViewModel @Inject constructor(
             savedInput = payload
             persistForm()
         }
-        when (val result = repository.create(payload)) {
+        when (val result = withContext(dispatcher) { repository.create(payload) }) {
             is Result.Success -> {
-                if (drafts.delete(requestId) is Result.Error) {
+                if (withContext(dispatcher) { drafts.delete(requestId) } is Result.Error) {
                     _state.update { it.copy(saving = false, unconfirmed = true, error = DEVICE_SAVE_ERROR) }
                     return
                 }
@@ -317,7 +332,7 @@ class IncidentFormViewModel @Inject constructor(
                 _state.update { it.copy(saving = false, savedId = result.data.id, dirty = false) }
             }
             is Result.Error -> if ((result.exception as? HttpException)?.code() in listOf(400, 413, 422)) {
-                if (drafts.save(payload, DraftState.DRAFT) is Result.Error) {
+                if (withContext(dispatcher) { drafts.save(payload, DraftState.DRAFT) } is Result.Error) {
                     _state.update { it.copy(saving = false, unconfirmed = true, error = DEVICE_SAVE_ERROR) }
                     return
                 }
@@ -329,11 +344,12 @@ class IncidentFormViewModel @Inject constructor(
         persistForm()
     }
 
-    private fun removeOldPhotos(input: ReportInput) {
-        savedInput?.newPhotos.orEmpty().filterNot { it in input.newPhotos }.forEach(photoStorage::deletePhoto)
+    private suspend fun removeOldPhotos(input: ReportInput) {
+        val oldPhotos = savedInput?.newPhotos.orEmpty().filterNot { it in input.newPhotos }
+        withContext(dispatcher) { oldPhotos.forEach(photoStorage::deletePhoto) }
     }
 
-    private fun clearDraftFiles() {
+    private suspend fun clearDraftFiles() = withContext(dispatcher) {
         runCatching { photoStorage.deleteDraft(requestId) }
             .onFailure { Timber.w(it, "Failed to delete draft photos") }
     }

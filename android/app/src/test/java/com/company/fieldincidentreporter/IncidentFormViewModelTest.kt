@@ -13,6 +13,7 @@ import com.company.fieldincidentreporter.ui.form.SavedForm
 import com.company.fieldincidentreporter.ui.form.SavedFormPhoto
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -72,6 +73,7 @@ class IncidentFormViewModelTest {
         form.cameraResult(removed.absolutePath, true)
         advanceUntilIdle()
         form.discardChanges()
+        advanceUntilIdle()
 
         assertTrue(saved.exists())
         assertFalse(removed.exists())
@@ -259,6 +261,7 @@ class IncidentFormViewModelTest {
         assertTrue(form.state.value.loadError)
 
         form.discardChanges()
+        advanceUntilIdle()
 
         assertTrue(photo.exists())
         assertTrue(photoStore.deletedDrafts.isEmpty())
@@ -294,6 +297,7 @@ class IncidentFormViewModelTest {
         val photo = photo("cancelled.jpg")
         val form = viewModel(SavedStateHandle(mapOf(KEY_EDIT_ID to "")))
         form.cameraResult(photo.absolutePath, false)
+        advanceUntilIdle()
         assertFalse(photo.exists())
     }
 
@@ -301,7 +305,7 @@ class IncidentFormViewModelTest {
         handle: SavedStateHandle,
         repository: FakeIncidentRepository = FakeIncidentRepository(),
         drafts: FakeDraftReports = FakeDraftReports(),
-    ) = IncidentFormViewModel(repository, photoStore, drafts, handle)
+    ) = IncidentFormViewModel(repository, photoStore, drafts, dispatcher, CoroutineScope(dispatcher), handle)
 
     private fun photo(name: String) = files.newFile(name).also { it.writeBytes(byteArrayOf(-1, -40, -1, -39)) }
 
