@@ -30,6 +30,7 @@ import java.net.URL
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -73,6 +74,44 @@ class SavedDraftE2eTest {
         assertEquals(null, draftRow(draft.id))
         assertFalse(draft.folder.exists())
         assertTrue(serverIncidents().contains(draft.title))
+    }
+
+    @Test fun submittedIncidentCanBeEditedAndDeleted() {
+        val draft = seedDraft(DraftState.DRAFT)
+        composeRule.activityRule.scenario.recreate()
+        waitForText(draft.title)
+
+        composeRule.onNodeWithText(draft.title).performClick()
+        waitForText("Send report")
+        composeRule.onNodeWithText("Send report").performClick()
+        waitForText("Incident details")
+        waitForText(draft.title)
+        val incidentId = checkNotNull(serverIncident(draft.title)) { "Submitted incident was not stored" }.getString("id")
+        assertEquals(null, draftRow(draft.id))
+
+        composeRule.onNodeWithText("Edit report").performClick()
+        waitForText("Save changes")
+        val updatedTitle = "Updated ${draft.title}"
+        val updatedLocation = "Updated E2E location"
+        composeRule.onNodeWithText(draft.title).performTextReplacement(updatedTitle)
+        composeRule.onNodeWithText("E2E location").performTextReplacement(updatedLocation)
+        composeRule.onNodeWithText("Save changes").performClick()
+
+        waitForText("Incident details")
+        waitForText(updatedTitle)
+        composeRule.onNodeWithText("Edit report").assertExists()
+        val updated = JSONObject(get("$baseUrl/incidents/$incidentId"))
+        assertEquals(updatedTitle, updated.getString("title"))
+        assertEquals(updatedLocation, updated.getString("location"))
+        assertEquals(1, updated.getJSONArray("photos").length())
+
+        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.onNodeWithText("Delete report").performClick()
+        waitForText("Incidents")
+        composeRule.waitUntil(15_000) {
+            composeRule.onAllNodesWithText(updatedTitle).fetchSemanticsNodes().isEmpty()
+        }
+        assertEquals(0, incidentCount(updatedTitle))
     }
 
     @Test fun failedSendRemainsLockedUntilManualRetry() {
@@ -239,6 +278,9 @@ class SavedDraftE2eTest {
 
     private fun control(mode: String) { get("$baseUrl/__e2e/control?mode=$mode") }
     private fun serverIncidents(): String = get("$baseUrl/incidents")
+    private fun serverIncident(title: String): JSONObject? = JSONArray(serverIncidents()).let { incidents ->
+        (0 until incidents.length()).map(incidents::getJSONObject).firstOrNull { it.getString("title") == title }
+    }
     private fun incidentCount(title: String): Int = JSONArray(serverIncidents()).let { incidents ->
         (0 until incidents.length()).count { incidents.getJSONObject(it).getString("title") == title }
     }
