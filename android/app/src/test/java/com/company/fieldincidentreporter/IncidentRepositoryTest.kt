@@ -2,7 +2,7 @@ package com.company.fieldincidentreporter
 
 import com.company.fieldincidentreporter.data.IncidentApi
 import com.company.fieldincidentreporter.data.NetworkIncidentRepository
-import com.company.fieldincidentreporter.data.ReportInput
+import com.company.fieldincidentreporter.model.ReportInput
 import com.company.fieldincidentreporter.model.Result
 import com.company.fieldincidentreporter.model.Severity
 import java.io.File

@@ -1,7 +1,9 @@
 package com.company.fieldincidentreporter.data.offline
 
-import com.company.fieldincidentreporter.data.ReportInput
 import com.company.fieldincidentreporter.data.resultOf
+import com.company.fieldincidentreporter.model.DraftReport
+import com.company.fieldincidentreporter.model.DraftState
+import com.company.fieldincidentreporter.model.ReportInput
 import com.company.fieldincidentreporter.model.Result
 import com.company.fieldincidentreporter.model.Severity
 import java.io.File

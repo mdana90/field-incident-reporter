@@ -16,11 +16,11 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.swipeDown
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.company.fieldincidentreporter.data.ReportInput
-import com.company.fieldincidentreporter.data.offline.DraftReport
 import com.company.fieldincidentreporter.data.offline.DraftReports
-import com.company.fieldincidentreporter.data.offline.DraftState
 import com.company.fieldincidentreporter.di.E2eDraftEntryPoint
+import com.company.fieldincidentreporter.model.DraftReport
+import com.company.fieldincidentreporter.model.DraftState
+import com.company.fieldincidentreporter.model.ReportInput
 import com.company.fieldincidentreporter.model.Result
 import com.company.fieldincidentreporter.model.Severity
 import dagger.hilt.android.EntryPointAccessors

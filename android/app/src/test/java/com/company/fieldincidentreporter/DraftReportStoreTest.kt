@@ -1,10 +1,10 @@
 package com.company.fieldincidentreporter
 
-import com.company.fieldincidentreporter.data.ReportInput
 import com.company.fieldincidentreporter.data.offline.DraftReportDao
 import com.company.fieldincidentreporter.data.offline.DraftReportEntity
 import com.company.fieldincidentreporter.data.offline.DraftReportStore
-import com.company.fieldincidentreporter.data.offline.DraftState
+import com.company.fieldincidentreporter.model.DraftState
+import com.company.fieldincidentreporter.model.ReportInput
 import com.company.fieldincidentreporter.model.Result
 import com.company.fieldincidentreporter.model.Severity
 import kotlinx.coroutines.flow.Flow

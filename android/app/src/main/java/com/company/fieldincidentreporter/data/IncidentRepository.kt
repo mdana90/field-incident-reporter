@@ -1,9 +1,8 @@
 package com.company.fieldincidentreporter.data
 
 import com.company.fieldincidentreporter.model.Incident
+import com.company.fieldincidentreporter.model.ReportInput
 import com.company.fieldincidentreporter.model.Result
-import com.company.fieldincidentreporter.model.Severity
-import java.io.File
 import javax.inject.Inject
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -12,16 +11,6 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
-
-data class ReportInput(
-    val title: String,
-    val description: String,
-    val severity: Severity,
-    val location: String,
-    val newPhotos: List<File>,
-    val keepPhotoIds: List<String> = emptyList(),
-    val clientRequestId: String? = null,
-)
 
 interface IncidentRepository {
     suspend fun list(): Result<List<Incident>>

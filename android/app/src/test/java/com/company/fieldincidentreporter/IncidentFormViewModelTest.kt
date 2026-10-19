@@ -3,8 +3,8 @@ package com.company.fieldincidentreporter
 import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import com.company.fieldincidentreporter.data.CameraPhoto
-import com.company.fieldincidentreporter.data.ReportInput
-import com.company.fieldincidentreporter.data.offline.DraftState
+import com.company.fieldincidentreporter.model.DraftState
+import com.company.fieldincidentreporter.model.ReportInput
 import com.company.fieldincidentreporter.model.Severity
 import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel
 import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel.Companion.KEY_CAMERA_PATH

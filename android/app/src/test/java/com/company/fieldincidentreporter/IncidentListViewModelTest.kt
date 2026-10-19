@@ -1,8 +1,8 @@
 package com.company.fieldincidentreporter
 
-import com.company.fieldincidentreporter.data.ReportInput
-import com.company.fieldincidentreporter.data.offline.DraftReport
-import com.company.fieldincidentreporter.data.offline.DraftState
+import com.company.fieldincidentreporter.model.DraftReport
+import com.company.fieldincidentreporter.model.DraftState
+import com.company.fieldincidentreporter.model.ReportInput
 import com.company.fieldincidentreporter.model.Severity
 import com.company.fieldincidentreporter.ui.incidentLocalDate
 import com.company.fieldincidentreporter.ui.list.IncidentListViewModel

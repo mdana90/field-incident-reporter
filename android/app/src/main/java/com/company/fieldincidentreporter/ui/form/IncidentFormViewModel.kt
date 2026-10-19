@@ -8,11 +8,11 @@ import androidx.lifecycle.viewModelScope
 import com.company.fieldincidentreporter.data.DraftPhotoStore
 import com.company.fieldincidentreporter.data.IncidentRepository
 import com.company.fieldincidentreporter.data.isRejection
-import com.company.fieldincidentreporter.data.ReportInput
 import com.company.fieldincidentreporter.data.offline.DraftReports
-import com.company.fieldincidentreporter.data.offline.DraftState
 import com.company.fieldincidentreporter.di.ApplicationScope
 import com.company.fieldincidentreporter.di.IoDispatcher
+import com.company.fieldincidentreporter.model.DraftState
+import com.company.fieldincidentreporter.model.ReportInput
 import com.company.fieldincidentreporter.model.Result
 import com.company.fieldincidentreporter.model.Severity
 import dagger.hilt.android.lifecycle.HiltViewModel

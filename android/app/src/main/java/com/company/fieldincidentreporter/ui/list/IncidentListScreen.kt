@@ -44,8 +44,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import com.company.fieldincidentreporter.data.offline.DraftState
-import com.company.fieldincidentreporter.data.offline.DraftReport
+import com.company.fieldincidentreporter.model.DraftReport
+import com.company.fieldincidentreporter.model.DraftState
 import com.company.fieldincidentreporter.ui.label
 import com.company.fieldincidentreporter.ui.theme.Amber
 import com.company.fieldincidentreporter.ui.theme.TealSoft

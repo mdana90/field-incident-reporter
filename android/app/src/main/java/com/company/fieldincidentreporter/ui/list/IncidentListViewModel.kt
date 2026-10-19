@@ -3,9 +3,9 @@ package com.company.fieldincidentreporter.ui.list
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.company.fieldincidentreporter.data.IncidentRepository
-import com.company.fieldincidentreporter.data.offline.DraftReport
 import com.company.fieldincidentreporter.data.offline.DraftReports
 import com.company.fieldincidentreporter.di.IoDispatcher
+import com.company.fieldincidentreporter.model.DraftReport
 import com.company.fieldincidentreporter.model.Incident
 import com.company.fieldincidentreporter.model.Result
 import com.company.fieldincidentreporter.ui.incidentLocalDate
