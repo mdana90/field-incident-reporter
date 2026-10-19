@@ -7,7 +7,7 @@ import retrofit2.HttpException
 import timber.log.Timber
 
 /**
- * Runs a data operation and turns any failure into [Result.Error], so callers never need try/catch.
+ * Runs a data operation and turns ordinary exceptions into [Result.Error].
  * Cancellation is rethrown so a cancelled coroutine stops instead of reporting an error.
  */
 suspend fun <T> resultOf(block: suspend () -> T): Result<T> = try {
@@ -31,5 +31,5 @@ fun Throwable.userMessage(): String = when (this) {
     else -> "Something went wrong. Try again."
 }
 
-/** True when the server refused the request itself, so sending the same report again would fail the same way. */
+/** True for validation responses that require changing the report before retrying. */
 fun Throwable.isRejection(): Boolean = this is HttpException && code() in listOf(400, 413, 422)

@@ -36,7 +36,7 @@ data class FormPhoto(val id: String? = null, val url: String? = null, val localF
 @Parcelize
 internal data class SavedFormPhoto(val id: String? = null, val url: String? = null, val path: String? = null) : Parcelable
 
-/** Unsaved form edits kept in [SavedStateHandle] under one key so they survive process death. */
+/** Snapshot of form fields kept in [SavedStateHandle] so edits survive process death. */
 @Parcelize
 internal data class SavedForm(
     val title: String,

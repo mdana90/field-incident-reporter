@@ -17,6 +17,6 @@ fun incidentLocalDate(
             isLenient = false
         }.parse(isoUtc)
     }.getOrNull() ?: return isoUtc.take(10)
-    // Same format as android.text.format.DateFormat.getDateFormat(context), without needing a Context.
+    // Use the locale's short date format; this does not read the device's custom date-format preference.
     return DateFormat.getDateInstance(DateFormat.SHORT, locale).apply { this.timeZone = timeZone }.format(parsed)
 }

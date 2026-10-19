@@ -32,7 +32,7 @@ export function createStore(dataDir) {
     get: (id) => read().find((item) => item.id === id),
     findRequest: (clientRequestId) => read().find((item) => item.clientRequestId === clientRequestId),
     create(incident) {
-      // Keep lookup and insert synchronous so two retries cannot both create a report.
+      // In this single-process server, synchronous lookup and write keep retries from creating duplicate reports.
       const incidents = read();
       const existing = incidents.find((item) => item.clientRequestId === incident.clientRequestId);
       if (existing) return { incident: existing, created: false };
