@@ -1,6 +1,8 @@
 package com.company.fieldincidentreporter
 
+import com.company.fieldincidentreporter.data.PhotoException
 import com.company.fieldincidentreporter.data.resultOf
+import com.company.fieldincidentreporter.data.userMessage
 import com.company.fieldincidentreporter.model.Result
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -21,6 +23,17 @@ class ResultOfTest {
         val result = resultOf { throw failure } as Result.Error
         assertSame(failure, result.exception)
         assertEquals("Could not reach the server. Check the connection and try again.", result.message)
+    }
+
+    @Test fun photoFailureShowsItsOwnMessageWhateverTheWording() {
+        assertEquals("Image must be a JPEG", PhotoException("Image must be a JPEG").userMessage())
+    }
+
+    @Test fun networkFailureShowsConnectionMessageEvenIfWordedLikePhotoError() {
+        assertEquals(
+            "Could not reach the server. Check the connection and try again.",
+            IOException("Photo upload stream closed").userMessage(),
+        )
     }
 
     @Test fun cancellationIsRethrownNotTurnedIntoError() {

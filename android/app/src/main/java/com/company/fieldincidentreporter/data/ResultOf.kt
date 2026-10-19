@@ -20,9 +20,8 @@ suspend fun <T> resultOf(block: suspend () -> T): Result<T> = try {
 }
 
 fun Throwable.userMessage(): String = when (this) {
-    is IOException -> if (message?.startsWith("Photo") == true || message?.startsWith("Could not read") == true) {
-        message.orEmpty()
-    } else "Could not reach the server. Check the connection and try again."
+    is PhotoException -> message.orEmpty()
+    is IOException -> "Could not reach the server. Check the connection and try again."
     is HttpException -> when (code()) {
         400 -> "Please check the report details and photos."
         404 -> "This report could not be found."

@@ -35,29 +35,33 @@ class PhotoStorage @Inject constructor(
 
     override suspend fun copyPickedPhoto(requestId: String, uri: Uri): Result<File> = resultOf {
         withContext(Dispatchers.IO) {
-            val mime = context.contentResolver.getType(uri)
-            if (mime != null && mime != "image/jpeg") throw IOException("Photo must be a JPEG")
-            val target = File(draftDirectory(requestId).apply { mkdirs() }, "${UUID.randomUUID()}.jpg")
-            try {
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    target.outputStream().use { output -> input.copyTo(output) }
-                } ?: throw IOException("Could not read this photo")
-                validateJpegFile(target)
-                target
-            } catch (failure: Exception) {
-                target.delete()
-                throw failure
+            photoIo {
+                val mime = context.contentResolver.getType(uri)
+                if (mime != null && mime != "image/jpeg") throw PhotoException("Photo must be a JPEG")
+                val target = File(draftDirectory(requestId).apply { mkdirs() }, "${UUID.randomUUID()}.jpg")
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    } ?: throw PhotoException("Could not read this photo")
+                    validateJpegFile(target)
+                    target
+                } catch (failure: Exception) {
+                    target.delete()
+                    throw failure
+                }
             }
         }
     }
 
     override suspend fun acceptCameraPhoto(requestId: String, file: File): Result<File> = resultOf {
         withContext(Dispatchers.IO) {
-            if (file.parentFile?.canonicalFile != draftDirectory(requestId).canonicalFile) {
-                throw IOException("Could not read this photo")
+            photoIo {
+                if (file.parentFile?.canonicalFile != draftDirectory(requestId).canonicalFile) {
+                    throw PhotoException("Could not read this photo")
+                }
+                validateJpegFile(file)
+                file
             }
-            validateJpegFile(file)
-            file
         }
     }
 
@@ -73,10 +77,22 @@ class PhotoStorage @Inject constructor(
 
 }
 
-internal fun validateJpegFile(file: File) {
-    if (!file.isFile || file.length() == 0L) throw IOException("Could not read this photo")
-    if (file.length() > 10L * 1024 * 1024) throw IOException("Photo must be under 10 MiB")
+internal fun validateJpegFile(file: File) = photoIo {
+    if (!file.isFile || file.length() == 0L) throw PhotoException("Could not read this photo")
+    if (file.length() > 10L * 1024 * 1024) throw PhotoException("Photo must be under 10 MiB")
     file.inputStream().use { input ->
-        if (input.read() != 0xff || input.read() != 0xd8) throw IOException("Photo must be a JPEG")
+        if (input.read() != 0xff || input.read() != 0xd8) throw PhotoException("Photo must be a JPEG")
     }
+}
+
+/** A problem with a local photo file. Its message is shown to the user as-is, never as a connection error. */
+class PhotoException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
+/** Reports any other I/O failure while handling a photo as unreadable, so it is never mistaken for a network error. */
+internal inline fun <T> photoIo(block: () -> T): T = try {
+    block()
+} catch (failure: PhotoException) {
+    throw failure
+} catch (failure: IOException) {
+    throw PhotoException("Could not read this photo", failure)
 }
