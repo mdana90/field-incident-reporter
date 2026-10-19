@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.company.fieldincidentreporter.data.DraftPhotoStore
 import com.company.fieldincidentreporter.data.IncidentRepository
+import com.company.fieldincidentreporter.data.isRejection
 import com.company.fieldincidentreporter.data.ReportInput
 import com.company.fieldincidentreporter.data.offline.DraftReports
 import com.company.fieldincidentreporter.data.offline.DraftState
@@ -26,7 +27,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
-import retrofit2.HttpException
 import timber.log.Timber
 
 data class FormPhoto(val id: String? = null, val url: String? = null, val localFile: File? = null) {
@@ -353,7 +353,7 @@ class IncidentFormViewModel @Inject constructor(
                 savedInput = null
                 _state.update { it.copy(saving = false, savedId = result.data.id, dirty = false) }
             }
-            is Result.Error -> if ((result.exception as? HttpException)?.code() in listOf(400, 413, 422)) {
+            is Result.Error -> if (result.exception.isRejection()) {
                 if (withContext(dispatcher) { drafts.save(payload, DraftState.DRAFT) } is Result.Error) {
                     _state.update { it.copy(saving = false, unconfirmed = true, error = DEVICE_SAVE_ERROR) }
                     return
