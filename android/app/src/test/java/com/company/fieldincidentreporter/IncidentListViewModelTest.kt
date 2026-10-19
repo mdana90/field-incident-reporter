@@ -25,6 +25,8 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class IncidentListViewModelTest {
     private val dispatcher = StandardTestDispatcher()
+    // A separate dispatcher on the same scheduler stands in for Dispatchers.IO, so tests can tell where work ran.
+    private val io = StandardTestDispatcher(dispatcher.scheduler)
 
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
@@ -33,7 +35,7 @@ class IncidentListViewModelTest {
         val drafts = FakeDraftReports()
         drafts.save(ReportInput("Pipe", "Leaking", Severity.HIGH, "A", emptyList(), clientRequestId = "draft-1"), DraftState.DRAFT)
         val repository = FakeIncidentRepository().apply { listResult = { throw IOException("offline") } }
-        val viewModel = IncidentListViewModel(repository, drafts, dispatcher)
+        val viewModel = IncidentListViewModel(repository, drafts, io)
         viewModel.refresh()
         advanceUntilIdle()
 
@@ -43,7 +45,7 @@ class IncidentListViewModelTest {
 
     @Test fun draftLoadFailureShowsDraftErrorAndKeepsServerList() = runTest(dispatcher) {
         val drafts = FakeDraftReports().apply { observeFailure = IOException("database unavailable") }
-        val viewModel = IncidentListViewModel(FakeIncidentRepository(), drafts, dispatcher)
+        val viewModel = IncidentListViewModel(FakeIncidentRepository(), drafts, io)
         viewModel.refresh()
         advanceUntilIdle()
 
@@ -55,7 +57,7 @@ class IncidentListViewModelTest {
         val drafts = FakeDraftReports()
         drafts.save(ReportInput("Pipe", "Leaking", Severity.HIGH, "A", emptyList(), clientRequestId = "draft-1"), DraftState.DRAFT)
         val repository = FakeIncidentRepository()
-        val viewModel = IncidentListViewModel(repository, drafts, dispatcher)
+        val viewModel = IncidentListViewModel(repository, drafts, io)
         viewModel.refresh()
         advanceUntilIdle()
 
@@ -75,5 +77,36 @@ class IncidentListViewModelTest {
         assertNotNull(viewModel.state.value.error)
         assertEquals("incident-1", viewModel.state.value.incidents.single().id)
         assertEquals("draft-1", viewModel.state.value.drafts.single().id)
+    }
+
+    @Test fun dataCallsRunOnIoDispatcher() = runTest(dispatcher) {
+        val drafts = FakeDraftReports()
+        drafts.save(ReportInput("Pipe", "Leaking", Severity.HIGH, "A", emptyList(), clientRequestId = "draft-1"), DraftState.DRAFT)
+        drafts.dispatchers.clear()
+        val repository = FakeIncidentRepository()
+        val viewModel = IncidentListViewModel(repository, drafts, io)
+
+        viewModel.refresh()
+        advanceUntilIdle()
+        viewModel.deleteDraft("draft-1")
+        advanceUntilIdle()
+
+        assertTrue(viewModel.state.value.drafts.isEmpty())
+        assertEquals(setOf(io), repository.dispatchers)
+        assertEquals(setOf(io), drafts.dispatchers)
+    }
+
+    @Test fun draftDeleteFailureKeepsDraftAndShowsError() = runTest(dispatcher) {
+        val drafts = FakeDraftReports()
+        drafts.save(ReportInput("Pipe", "Leaking", Severity.HIGH, "A", emptyList(), clientRequestId = "draft-1"), DraftState.DRAFT)
+        drafts.deleteFailure = IOException("database unavailable")
+        val viewModel = IncidentListViewModel(FakeIncidentRepository(), drafts, io)
+        advanceUntilIdle()
+
+        viewModel.deleteDraft("draft-1")
+        advanceUntilIdle()
+
+        assertEquals("draft-1", viewModel.state.value.drafts.single().id)
+        assertEquals("Could not delete this draft. Try again.", viewModel.state.value.draftError)
     }
 }

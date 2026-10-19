@@ -3,12 +3,10 @@ package com.company.fieldincidentreporter.ui.detail
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.navigation.toRoute
 import com.company.fieldincidentreporter.data.IncidentRepository
 import com.company.fieldincidentreporter.di.IoDispatcher
 import com.company.fieldincidentreporter.model.Incident
 import com.company.fieldincidentreporter.model.Result
-import com.company.fieldincidentreporter.ui.DetailRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
@@ -33,7 +31,8 @@ class IncidentDetailViewModel @Inject constructor(
     @IoDispatcher private val dispatcher: CoroutineDispatcher,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    private val id = savedStateHandle.toRoute<DetailRoute>().id
+    // DetailRoute args are read by key rather than toRoute(), which needs Robolectric in JVM tests.
+    private val id = requireNotNull(savedStateHandle.get<String>(KEY_ID))
     private val _state = MutableStateFlow(DetailUiState())
     val state = _state.asStateFlow()
     private var refreshJob: Job? = null
@@ -58,5 +57,9 @@ class IncidentDetailViewModel @Inject constructor(
                 is Result.Error -> _state.update { it.copy(deleting = false, error = result.message) }
             }
         }
+    }
+
+    companion object {
+        internal const val KEY_ID = "id"
     }
 }
