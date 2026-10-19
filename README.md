@@ -7,6 +7,26 @@ Field Incident Reporter lets a field technician photograph an incident, enter it
 - [Android app demo](docs/demo/field-incident-demo.mp4)
 - [Web dashboard demo](docs/demo/web-dashboard-demo.mp4)
 
+## ✨ Features
+
+### 📱 Android app
+
+- **Capture incidents:** Add a title, description, severity, location, and one to three photos from the camera or photo picker.
+- **Save drafts:** Keep a report on the device and send it later, or retry a submission whose result could not be confirmed.
+- **Manage reports:** View, edit, and delete submitted incidents.
+
+| Report an incident | View submitted reports |
+| :---: | :---: |
+| <img src="docs/screenshots/android-report.jpg" alt="Android incident report form with a photo and incident details" width="240"> | <img src="docs/screenshots/android-list.jpg" alt="Android list showing a submitted incident" width="240"> |
+
+### 🖥️ Operator dashboard
+
+- **Find what matters:** Search, filter, and sort a queue that refreshes every 15 seconds.
+- **Review and resolve:** Inspect photos and details, then update severity, status, and the resolution note.
+
+| Incident queue | Operator triage |
+| :---: | :---: |
+| <img src="docs/screenshots/web-queue.jpg" alt="Dashboard incident queue with search, filters, and severity" width="480"> | <img src="docs/screenshots/web-triage.jpg" alt="Operator triage screen with incident photos, severity, status, and resolution note" width="480"> |
 
 ## 🚀 Run locally
 
@@ -43,19 +63,6 @@ npm run dev
 ```
 
 Open `http://localhost:3001`. Set `API_BASE_URL` if the API is running somewhere other than `http://localhost:3000`.
-
-## ✨ Features
-
-### 📱 Android app
-
-- **Report incidents:** Add details and one to three photos using the camera or photo picker.
-- **Save and send:** Keep drafts on the device, then send them when ready. Retry submissions whose result could not be confirmed.
-- **Manage reports:** View, edit, or delete submitted incidents.
-
-### 🖥️ Operator dashboard
-
-- **Find what matters:** Search, filter, and sort a queue that refreshes every 15 seconds.
-- **Review and resolve:** Inspect photos and details, then update severity, status, and the resolution note.
 
 ## 🧪 Tests
 
