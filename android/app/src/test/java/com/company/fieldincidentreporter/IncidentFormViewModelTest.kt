@@ -1,6 +1,8 @@
 package com.company.fieldincidentreporter
 
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
+import com.company.fieldincidentreporter.data.CameraPhoto
 import com.company.fieldincidentreporter.data.ReportInput
 import com.company.fieldincidentreporter.data.offline.DraftState
 import com.company.fieldincidentreporter.model.Severity
@@ -12,6 +14,7 @@ import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel.Companion
 import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel.Companion.KEY_REQUEST_ID
 import com.company.fieldincidentreporter.ui.form.SavedForm
 import com.company.fieldincidentreporter.ui.form.SavedFormPhoto
+import io.mockk.mockk
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +32,8 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -41,6 +46,8 @@ import retrofit2.Response
 class IncidentFormViewModelTest {
     @get:Rule val files = TemporaryFolder()
     private val dispatcher = StandardTestDispatcher()
+    // A separate dispatcher on the same scheduler stands in for Dispatchers.IO, so tests can tell where work ran.
+    private val io = StandardTestDispatcher(dispatcher.scheduler)
     private val photoStore = FakeDraftPhotoStore()
 
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
@@ -292,6 +299,8 @@ class IncidentFormViewModelTest {
         assertEquals(1, repository.updates.size)
         assertEquals(listOf("kept-photo"), repository.updates.single().keepPhotoIds)
         assertTrue(drafts.saves.isEmpty())
+        assertFalse("a failed save keeps the form open, not the load error screen", form.state.value.loadError)
+        assertTrue(form.state.value.editable)
     }
 
     @Test fun cancelledCameraCaptureDeletesItsFile() = runTest(dispatcher) {
@@ -311,11 +320,148 @@ class IncidentFormViewModelTest {
         assertEquals("Could not open the camera. Try again.", form.state.value.error)
     }
 
+    @Test fun preparedCameraPhotoIsAddedWhenCaptureSucceeds() = runTest(dispatcher) {
+        val captured = photo("captured.jpg")
+        val uri = mockk<Uri>()
+        photoStore.cameraPhoto = { CameraPhoto(uri, captured) }
+        val handle = SavedStateHandle(mapOf(KEY_EDIT_ID to ""))
+        val form = viewModel(handle)
+
+        assertEquals(uri, form.prepareCameraPhoto())
+        assertEquals(captured.absolutePath, handle.get<String>(KEY_CAMERA_PATH))
+
+        form.cameraResult(true)
+        advanceUntilIdle()
+        assertEquals(listOf(captured), form.state.value.photos.mapNotNull { it.localFile })
+        assertNull(handle.get<String>(KEY_CAMERA_PATH))
+    }
+
+    @Test fun cameraPhotoThatCannotBeCreatedShowsError() = runTest(dispatcher) {
+        photoStore.cameraPhoto = { throw IOException("disk full") }
+        val handle = SavedStateHandle(mapOf(KEY_EDIT_ID to ""))
+        val form = viewModel(handle)
+
+        assertNull(form.prepareCameraPhoto())
+        assertEquals("Could not open the camera. Try again.", form.state.value.error)
+        assertNull(handle.get<String>(KEY_CAMERA_PATH))
+    }
+
+    @Test fun cameraResultWithoutPreparedPhotoIsIgnored() = runTest(dispatcher) {
+        val form = viewModel(SavedStateHandle(mapOf(KEY_EDIT_ID to "")))
+        form.cameraResult(true)
+        advanceUntilIdle()
+        assertTrue(form.state.value.photos.isEmpty())
+        assertNull(form.state.value.error)
+    }
+
+    @Test fun capturedPhotoBeyondLimitIsDeleted() = runTest(dispatcher) {
+        val extra = photo("extra.jpg")
+        val form = viewModel(draftHandle(photoCount = 3).apply { set(KEY_CAMERA_PATH, extra.absolutePath) })
+        runCurrent()
+        assertFalse(form.state.value.hasPhotoSlots)
+
+        form.cameraResult(true)
+        advanceUntilIdle()
+        assertFalse(extra.exists())
+        assertEquals(3, form.state.value.photos.size)
+    }
+
+    @Test fun pickedPhotosOnlyFillFreeSlots() = runTest(dispatcher) {
+        photoStore.pickedPhoto = { photo("picked-${photoStore.pickedUris.size}.jpg") }
+        val form = viewModel(draftHandle())
+        runCurrent()
+        assertEquals(1, form.state.value.photos.size)
+
+        form.addPhotos(List(4) { mockk<Uri>() })
+        advanceUntilIdle()
+
+        assertEquals(2, photoStore.pickedUris.size)
+        assertEquals(3, form.state.value.photos.size)
+        assertFalse(form.state.value.hasPhotoSlots)
+    }
+
+    @Test fun pickedPhotosAreIgnoredWhileDraftIsLocked() = runTest(dispatcher) {
+        val drafts = FakeDraftReports()
+        drafts.save(input(listOf(photo("locked.jpg"))), DraftState.UNCONFIRMED)
+        val form = viewModel(SavedStateHandle(mapOf(KEY_DRAFT_ID to "stable-request-id")), drafts = drafts)
+        advanceUntilIdle()
+        assertFalse(form.state.value.editable)
+        assertTrue("an unconfirmed draft can still be re-sent", form.state.value.canSubmit)
+
+        form.addPhotos(listOf(mockk()))
+        advanceUntilIdle()
+
+        assertTrue(photoStore.pickedUris.isEmpty())
+        assertEquals(1, form.state.value.photos.size)
+    }
+
+    @Test fun formIsLockedWhileSaving() = runTest(dispatcher) {
+        val response = CompletableDeferred<com.company.fieldincidentreporter.model.Incident>()
+        val repository = FakeIncidentRepository().apply { createResult = { response.await() } }
+        val form = viewModel(draftHandle(), repository)
+        runCurrent()
+        assertTrue(form.state.value.editable)
+        assertTrue(form.state.value.canSubmit)
+
+        form.sendReport()
+        runCurrent()
+        assertFalse(form.state.value.editable)
+        assertFalse(form.state.value.canSubmit)
+        form.title("Changed while saving")
+        assertEquals("Pipe", form.state.value.title)
+
+        response.complete(testIncident())
+        advanceUntilIdle()
+    }
+
+    @Test fun incidentLoadFailureShowsRetryAndRetryRecovers() = runTest(dispatcher) {
+        val repository = FakeIncidentRepository().apply { getResult = { throw IOException("offline") } }
+        val form = viewModel(SavedStateHandle(mapOf(KEY_EDIT_ID to "existing")), repository)
+        advanceUntilIdle()
+        assertTrue(form.state.value.loadError)
+        assertNotNull(form.state.value.error)
+        assertFalse(form.state.value.editable)
+        assertFalse(form.state.value.canSubmit)
+
+        repository.getResult = { testIncident(it) }
+        form.retryLoad()
+        advanceUntilIdle()
+        assertFalse(form.state.value.loadError)
+        assertNull(form.state.value.error)
+        assertEquals("Pipe", form.state.value.title)
+        assertTrue(form.state.value.editable)
+    }
+
+    @Test fun openedSavedDraftIsMarkedSavedBeforeItLoads() = runTest(dispatcher) {
+        val form = viewModel(SavedStateHandle(mapOf(KEY_DRAFT_ID to "stable-request-id")))
+        assertTrue(form.state.value.loading)
+        assertTrue(form.state.value.hasSavedDraft)
+        advanceUntilIdle()
+    }
+
+    @Test fun dataCallsRunOnIoDispatcher() = runTest(dispatcher) {
+        val repository = FakeIncidentRepository()
+        val drafts = FakeDraftReports()
+        val form = viewModel(draftHandle(), repository, drafts)
+        runCurrent()
+
+        form.sendReport()
+        advanceUntilIdle()
+        val editing = viewModel(SavedStateHandle(mapOf(KEY_EDIT_ID to "existing")), repository, drafts)
+        advanceUntilIdle()
+
+        assertEquals("incident-1", form.state.value.savedId)
+        assertEquals("Pipe", editing.state.value.title)
+        assertEquals(setOf(io), repository.dispatchers)
+        assertEquals(setOf(io), drafts.dispatchers)
+        assertEquals(setOf(io), photoStore.dispatchers)
+    }
+
     private fun viewModel(
         handle: SavedStateHandle,
         repository: FakeIncidentRepository = FakeIncidentRepository(),
         drafts: FakeDraftReports = FakeDraftReports(),
-    ) = IncidentFormViewModel(repository, photoStore, drafts, dispatcher, CoroutineScope(dispatcher), handle)
+    ) = IncidentFormViewModel(repository, photoStore, drafts, io, CoroutineScope(io), handle)
 
     private fun photo(name: String) = files.newFile(name).also { it.writeBytes(byteArrayOf(-1, -40, -1, -39)) }
 
@@ -324,9 +470,8 @@ class IncidentFormViewModelTest {
         location = "Building A", newPhotos = photos, clientRequestId = "stable-request-id",
     )
 
-    private fun draftHandle(editId: String = ""): SavedStateHandle {
-        val photo = photo("photo-${files.root.listFiles()?.size}.jpg")
-        val photos = mutableListOf(SavedFormPhoto(path = photo.absolutePath))
+    private fun draftHandle(editId: String = "", photoCount: Int = 1): SavedStateHandle {
+        val photos = MutableList(photoCount) { SavedFormPhoto(path = photo("photo-${files.root.listFiles()?.size}.jpg").absolutePath) }
         if (editId.isNotBlank()) photos += SavedFormPhoto(id = "kept-photo", url = "/uploads/kept-photo.jpg")
         val form = SavedForm(
             title = "Pipe", description = "Leaking", severity = Severity.HIGH, location = "Building A",

@@ -66,7 +66,14 @@ data class FormUiState(
     val sendUnconfirmed: Boolean = false,
     val unconfirmed: Boolean = false,
     val hasSavedDraft: Boolean = false,
-)
+) {
+    /** Fields and photos accept changes only once loaded, while nothing is saving and the draft is not locked by an unconfirmed send. */
+    val editable: Boolean get() = !saving && !loading && !loadError && !unconfirmed
+    val hasPhotoSlots: Boolean get() = photos.size < MAX_PHOTOS
+    val canSubmit: Boolean get() = !saving && !loading && !loadError
+}
+
+const val MAX_PHOTOS = 3
 
 fun validateReport(
     title: String,
@@ -79,7 +86,7 @@ fun validateReport(
     if (description.isBlank()) put("description", "Required")
     if (severity == null) put("severity", "Choose a severity")
     if (location.isBlank()) put("location", "Required")
-    if (photoCount !in 1..3) put("photos", "Choose 1 to 3 photos")
+    if (photoCount !in 1..MAX_PHOTOS) put("photos", "Choose 1 to $MAX_PHOTOS photos")
 }
 
 @HiltViewModel
@@ -93,7 +100,7 @@ class IncidentFormViewModel @Inject constructor(
 ) : ViewModel() {
     // FormRoute args are read by key rather than toRoute(), which needs Robolectric in JVM tests.
     val editId = savedStateHandle.get<String>(KEY_EDIT_ID)?.takeIf(String::isNotBlank)
-    val draftId = savedStateHandle.get<String>(KEY_DRAFT_ID)?.takeIf(String::isNotBlank)
+    private val draftId = savedStateHandle.get<String>(KEY_DRAFT_ID)?.takeIf(String::isNotBlank)
     private val hadRequestId = !savedStateHandle.get<String>(KEY_REQUEST_ID).isNullOrBlank()
     private val requestId: String = draftId ?: savedStateHandle[KEY_REQUEST_ID]
         ?: UUID.randomUUID().toString().also { savedStateHandle[KEY_REQUEST_ID] = it }
@@ -106,6 +113,7 @@ class IncidentFormViewModel @Inject constructor(
     private var savedInput: ReportInput? = null
     private val _state = MutableStateFlow((restored ?: FormUiState()).copy(
         loading = if (editId != null) restored == null else shouldCheckDraft,
+        hasSavedDraft = restored?.hasSavedDraft == true || draftId != null,
     ))
     val state = _state.asStateFlow()
 
@@ -133,7 +141,7 @@ class IncidentFormViewModel @Inject constructor(
 
     fun cameraResult(success: Boolean) {
         val file = savedStateHandle.remove<String>(KEY_CAMERA_PATH)?.let(::File) ?: return
-        if (!success || !canChangePhotos() || _state.value.photos.size >= 3) {
+        if (!success || !canAddPhoto()) {
             deleteInBackground { photoStorage.deletePhoto(file) }
             return
         }
@@ -207,7 +215,7 @@ class IncidentFormViewModel @Inject constructor(
 
     private fun loadIncident() {
         viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = null) }
+            _state.update { it.copy(loading = true, loadError = false, error = null) }
             when (val result = withContext(dispatcher) { repository.get(requireNotNull(editId)) }) {
                 is Result.Success -> {
                     val incident = result.data
@@ -221,7 +229,7 @@ class IncidentFormViewModel @Inject constructor(
                     }
                     persistForm()
                 }
-                is Result.Error -> _state.update { it.copy(loading = false, error = result.message) }
+                is Result.Error -> _state.update { it.copy(loading = false, loadError = true, error = result.message) }
             }
         }
     }
@@ -230,9 +238,9 @@ class IncidentFormViewModel @Inject constructor(
         if (editId != null) loadIncident() else loadDraft()
     }
 
-    private fun canChangePhotos() = !_state.value.saving && !_state.value.loading && !_state.value.loadError && !_state.value.unconfirmed
+    private fun canAddPhoto() = _state.value.editable && _state.value.hasPhotoSlots
     private fun changeForm(change: (FormUiState) -> FormUiState) {
-        if (_state.value.saving || _state.value.loading || _state.value.loadError || _state.value.unconfirmed) return
+        if (!_state.value.editable) return
         _state.update(change)
         persistForm()
     }
@@ -242,8 +250,13 @@ class IncidentFormViewModel @Inject constructor(
     fun location(value: String) = changeForm { it.copy(location = value, dirty = true, fieldErrors = it.fieldErrors - "location") }
     fun severity(value: Severity) = changeForm { it.copy(severity = value, dirty = true, fieldErrors = it.fieldErrors - "severity") }
 
-    fun addPhoto(uri: Uri) {
-        if (!canChangePhotos() || _state.value.photos.size >= 3) return
+    /** Copies the picked photos that still fit, ignoring any beyond [MAX_PHOTOS]. */
+    fun addPhotos(uris: List<Uri>) {
+        if (!canAddPhoto()) return
+        uris.take(MAX_PHOTOS - _state.value.photos.size).forEach(::addPhoto)
+    }
+
+    private fun addPhoto(uri: Uri) {
         viewModelScope.launch {
             when (val result = withContext(dispatcher) { photoStorage.copyPickedPhoto(requestId, uri) }) {
                 is Result.Success -> addLocalPhoto(result.data)
@@ -253,7 +266,7 @@ class IncidentFormViewModel @Inject constructor(
     }
 
     private fun addLocalPhoto(file: File) {
-        if (!canChangePhotos() || _state.value.photos.size >= 3) {
+        if (!canAddPhoto()) {
             deleteInBackground { photoStorage.deletePhoto(file) }
             return
         }
@@ -261,7 +274,7 @@ class IncidentFormViewModel @Inject constructor(
     }
 
     fun removePhoto(key: String) {
-        if (!canChangePhotos()) return
+        if (!_state.value.editable) return
         val file = _state.value.photos.firstOrNull { it.key == key }?.localFile
         changeForm { it.copy(photos = it.photos.filterNot { photo -> photo.key == key }, dirty = true) }
         if (file != null && file !in savedInput?.newPhotos.orEmpty()) deleteInBackground { photoStorage.deletePhoto(file) }
