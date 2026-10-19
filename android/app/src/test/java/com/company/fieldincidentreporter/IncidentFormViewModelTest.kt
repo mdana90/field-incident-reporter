@@ -26,8 +26,6 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.resetMain
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -157,7 +155,7 @@ class IncidentFormViewModelTest {
         assertTrue(savedForm(handle).stored)
 
         val staleHandle = SavedStateHandle(handle.keys().associateWith { handle.get<Any?>(it) })
-        staleHandle[KEY_FORM] = Json.encodeToString(savedForm(handle).copy(stored = false))
+        staleHandle[KEY_FORM] = savedForm(handle).copy(stored = false)
         val restored = viewModel(staleHandle, repository, drafts)
         runCurrent()
         assertTrue(restored.state.value.unconfirmed)
@@ -478,11 +476,11 @@ class IncidentFormViewModelTest {
             photos = photos, dirty = true, stored = false,
         )
         return SavedStateHandle(mapOf(
-            KEY_EDIT_ID to editId, KEY_REQUEST_ID to "stable-request-id", KEY_FORM to Json.encodeToString(form),
+            KEY_EDIT_ID to editId, KEY_REQUEST_ID to "stable-request-id", KEY_FORM to form,
         ))
     }
 
-    private fun savedForm(handle: SavedStateHandle) = Json.decodeFromString<SavedForm>(handle.get<String>(KEY_FORM)!!)
+    private fun savedForm(handle: SavedStateHandle) = requireNotNull(handle.get<SavedForm>(KEY_FORM))
 
     private fun httpFailure(code: Int) = HttpException(Response.error<Any>(code, "failure".toResponseBody()))
 }

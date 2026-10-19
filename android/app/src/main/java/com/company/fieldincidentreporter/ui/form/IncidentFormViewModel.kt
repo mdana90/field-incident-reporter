@@ -1,6 +1,7 @@
 package com.company.fieldincidentreporter.ui.form
 
 import android.net.Uri
+import android.os.Parcelable
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -24,9 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
+import kotlinx.parcelize.Parcelize
 import retrofit2.HttpException
 import timber.log.Timber
 
@@ -34,11 +33,11 @@ data class FormPhoto(val id: String? = null, val url: String? = null, val localF
     val key: String get() = id ?: localFile?.path.orEmpty()
 }
 
-@Serializable
-internal data class SavedFormPhoto(val id: String? = null, val url: String? = null, val path: String? = null)
+@Parcelize
+internal data class SavedFormPhoto(val id: String? = null, val url: String? = null, val path: String? = null) : Parcelable
 
 /** Unsaved form edits kept in [SavedStateHandle] under one key so they survive process death. */
-@Serializable
+@Parcelize
 internal data class SavedForm(
     val title: String,
     val description: String,
@@ -47,7 +46,7 @@ internal data class SavedForm(
     val photos: List<SavedFormPhoto>,
     val dirty: Boolean,
     val stored: Boolean,
-)
+) : Parcelable
 
 data class FormUiState(
     val title: String = "",
@@ -104,9 +103,7 @@ class IncidentFormViewModel @Inject constructor(
     private val hadRequestId = !savedStateHandle.get<String>(KEY_REQUEST_ID).isNullOrBlank()
     private val requestId: String = draftId ?: savedStateHandle[KEY_REQUEST_ID]
         ?: UUID.randomUUID().toString().also { savedStateHandle[KEY_REQUEST_ID] = it }
-    private val savedForm: SavedForm? = savedStateHandle.get<String>(KEY_FORM)?.let {
-        runCatching { Json.decodeFromString<SavedForm>(it) }.getOrNull()
-    }
+    private val savedForm: SavedForm? = savedStateHandle.get<SavedForm>(KEY_FORM)
     private val persistedDraftId = draftId ?: if (savedForm?.stored == true) requestId else null
     private val shouldCheckDraft = editId == null && (draftId != null || hadRequestId)
     private val restored = savedForm?.toUiState()
@@ -164,7 +161,7 @@ class IncidentFormViewModel @Inject constructor(
             val discarded = _state.value.photos.mapNotNull(FormPhoto::localFile).filterNot { it in retained }
             deleteInBackground { discarded.forEach(photoStorage::deletePhoto) }
         }
-        savedStateHandle.remove<String>(KEY_FORM)
+        savedStateHandle.remove<SavedForm>(KEY_FORM)
     }
 
     /** Runs on [appScope] so the cleanup still finishes after the screen closes and [viewModelScope] is cancelled. */
@@ -382,10 +379,10 @@ class IncidentFormViewModel @Inject constructor(
     private fun persistForm() {
         val form = _state.value
         if (form.savedId != null) {
-            savedStateHandle.remove<String>(KEY_FORM)
+            savedStateHandle.remove<SavedForm>(KEY_FORM)
             return
         }
-        savedStateHandle[KEY_FORM] = Json.encodeToString(SavedForm(
+        savedStateHandle[KEY_FORM] = SavedForm(
             title = form.title,
             description = form.description,
             severity = form.severity,
@@ -393,7 +390,7 @@ class IncidentFormViewModel @Inject constructor(
             photos = form.photos.map { SavedFormPhoto(id = it.id, url = it.url, path = it.localFile?.absolutePath) },
             dirty = form.dirty,
             stored = savedInput != null,
-        ))
+        )
     }
 
     companion object {
