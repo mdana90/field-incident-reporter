@@ -4,7 +4,6 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.company.fieldincidentreporter.data.CameraPhoto
 import com.company.fieldincidentreporter.data.DraftPhotoStore
 import com.company.fieldincidentreporter.data.IncidentRepository
 import com.company.fieldincidentreporter.data.ReportInput
@@ -117,10 +116,23 @@ class IncidentFormViewModel @Inject constructor(
         }
     }
 
-    fun newCameraPhoto(): CameraPhoto = photoStorage.newCameraPhoto(requestId)
+    /** Creates the file the camera app writes into and returns its URI, or null after showing an error. */
+    fun prepareCameraPhoto(): Uri? {
+        val photo = runCatching { photoStorage.newCameraPhoto(requestId) }
+            .onFailure(::cameraLaunchFailed)
+            .getOrNull() ?: return null
+        savedStateHandle[KEY_CAMERA_PATH] = photo.file.absolutePath
+        return photo.uri
+    }
 
-    fun cameraResult(path: String, success: Boolean) {
-        val file = File(path)
+    fun cameraLaunchFailed(failure: Throwable) {
+        Timber.w(failure, "Failed to open camera")
+        cameraResult(success = false)
+        showError("Could not open the camera. Try again.")
+    }
+
+    fun cameraResult(success: Boolean) {
+        val file = savedStateHandle.remove<String>(KEY_CAMERA_PATH)?.let(::File) ?: return
         if (!success || !canChangePhotos() || _state.value.photos.size >= 3) {
             deleteInBackground { photoStorage.deletePhoto(file) }
             return
@@ -376,6 +388,7 @@ class IncidentFormViewModel @Inject constructor(
         internal const val KEY_DRAFT_ID = "draftId"
         internal const val KEY_REQUEST_ID = "clientRequestId"
         internal const val KEY_FORM = "form"
+        internal const val KEY_CAMERA_PATH = "cameraPath"
         private const val DEVICE_SAVE_ERROR = "Could not save the report on this device. Try again."
     }
 }

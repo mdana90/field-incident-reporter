@@ -1,5 +1,6 @@
 package com.company.fieldincidentreporter.ui.form
 
+import android.content.ActivityNotFoundException
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -39,7 +40,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,7 +51,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.company.fieldincidentreporter.model.Severity
 import com.company.fieldincidentreporter.ui.imageUrl
-import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,14 +64,10 @@ fun IncidentFormScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val editing = viewModel.editId != null
     val savedDraft = viewModel.draftId != null || state.hasSavedDraft
-    var pendingCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
     var severityOpen by remember { mutableStateOf(false) }
 
-    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        pendingCameraPath?.let { viewModel.cameraResult(it, success) }
-        pendingCameraPath = null
-    }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture(), viewModel::cameraResult)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(3)) { uris ->
         uris.take(3 - state.photos.size).forEach(viewModel::addPhoto)
     }
@@ -166,15 +161,12 @@ fun IncidentFormScreen(
                 if (state.photos.size < 3) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(enabled = !state.saving && !state.unconfirmed, onClick = {
-                            try {
-                                val photo = viewModel.newCameraPhoto()
-                                pendingCameraPath = photo.file.absolutePath
-                                camera.launch(photo.uri)
-                            } catch (failure: Exception) {
-                                pendingCameraPath?.let { viewModel.cameraResult(it, false) }
-                                pendingCameraPath = null
-                                Timber.w(failure, "Failed to open camera")
-                                viewModel.showError("Could not open the camera. Try again.")
+                            viewModel.prepareCameraPhoto()?.let { uri ->
+                                try {
+                                    camera.launch(uri)
+                                } catch (failure: ActivityNotFoundException) {
+                                    viewModel.cameraLaunchFailed(failure)
+                                }
                             }
                         }) { Text("Take photo") }
                         OutlinedButton(enabled = !state.saving && !state.unconfirmed, onClick = {

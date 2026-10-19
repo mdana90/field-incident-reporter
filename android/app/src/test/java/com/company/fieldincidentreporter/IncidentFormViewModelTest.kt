@@ -5,6 +5,7 @@ import com.company.fieldincidentreporter.data.ReportInput
 import com.company.fieldincidentreporter.data.offline.DraftState
 import com.company.fieldincidentreporter.model.Severity
 import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel
+import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel.Companion.KEY_CAMERA_PATH
 import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel.Companion.KEY_DRAFT_ID
 import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel.Companion.KEY_EDIT_ID
 import com.company.fieldincidentreporter.ui.form.IncidentFormViewModel.Companion.KEY_FORM
@@ -65,12 +66,12 @@ class IncidentFormViewModelTest {
         val saved = photo("saved.jpg")
         val removed = photo("removed.jpg")
         drafts.save(input(listOf(saved)), DraftState.DRAFT)
-        val form = viewModel(SavedStateHandle(mapOf(KEY_DRAFT_ID to "stable-request-id")), drafts = drafts)
+        val form = viewModel(SavedStateHandle(mapOf(KEY_DRAFT_ID to "stable-request-id", KEY_CAMERA_PATH to removed.absolutePath)), drafts = drafts)
         advanceUntilIdle()
         assertEquals(listOf(saved), form.state.value.photos.mapNotNull { it.localFile })
 
         form.removePhoto(saved.absolutePath)
-        form.cameraResult(removed.absolutePath, true)
+        form.cameraResult(true)
         advanceUntilIdle()
         form.discardChanges()
         advanceUntilIdle()
@@ -100,11 +101,11 @@ class IncidentFormViewModelTest {
         val original = photo("original.jpg")
         val replacement = photo("replacement.jpg")
         drafts.save(input(listOf(original)), DraftState.DRAFT)
-        val form = viewModel(SavedStateHandle(mapOf(KEY_DRAFT_ID to "stable-request-id")), drafts = drafts)
+        val form = viewModel(SavedStateHandle(mapOf(KEY_DRAFT_ID to "stable-request-id", KEY_CAMERA_PATH to replacement.absolutePath)), drafts = drafts)
         advanceUntilIdle()
 
         form.removePhoto(original.absolutePath)
-        form.cameraResult(replacement.absolutePath, true)
+        form.cameraResult(true)
         advanceUntilIdle()
         assertTrue(original.exists())
 
@@ -295,10 +296,19 @@ class IncidentFormViewModelTest {
 
     @Test fun cancelledCameraCaptureDeletesItsFile() = runTest(dispatcher) {
         val photo = photo("cancelled.jpg")
-        val form = viewModel(SavedStateHandle(mapOf(KEY_EDIT_ID to "")))
-        form.cameraResult(photo.absolutePath, false)
+        val form = viewModel(SavedStateHandle(mapOf(KEY_EDIT_ID to "", KEY_CAMERA_PATH to photo.absolutePath)))
+        form.cameraResult(false)
         advanceUntilIdle()
         assertFalse(photo.exists())
+    }
+
+    @Test fun cameraThatCannotOpenDeletesItsFileAndShowsError() = runTest(dispatcher) {
+        val photo = photo("unopened.jpg")
+        val form = viewModel(SavedStateHandle(mapOf(KEY_EDIT_ID to "", KEY_CAMERA_PATH to photo.absolutePath)))
+        form.cameraLaunchFailed(IOException("no camera app"))
+        advanceUntilIdle()
+        assertFalse(photo.exists())
+        assertEquals("Could not open the camera. Try again.", form.state.value.error)
     }
 
     private fun viewModel(
