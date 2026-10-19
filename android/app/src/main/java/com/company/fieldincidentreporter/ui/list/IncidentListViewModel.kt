@@ -5,18 +5,22 @@ import androidx.lifecycle.viewModelScope
 import com.company.fieldincidentreporter.data.IncidentRepository
 import com.company.fieldincidentreporter.data.offline.DraftReport
 import com.company.fieldincidentreporter.data.offline.DraftReports
+import com.company.fieldincidentreporter.di.IoDispatcher
 import com.company.fieldincidentreporter.model.Incident
 import com.company.fieldincidentreporter.model.Result
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 data class ListUiState(
@@ -32,6 +36,7 @@ data class ListUiState(
 class IncidentListViewModel @Inject constructor(
     private val repository: IncidentRepository,
     private val drafts: DraftReports,
+    @IoDispatcher private val dispatcher: CoroutineDispatcher,
 ) : ViewModel() {
     private val _state = MutableStateFlow(ListUiState())
     val state = _state.asStateFlow()
@@ -39,6 +44,7 @@ class IncidentListViewModel @Inject constructor(
 
     init {
         drafts.observe()
+            .flowOn(dispatcher)
             .onEach { reports -> _state.update { it.copy(drafts = reports, draftError = null) } }
             .catch { failure ->
                 Timber.w(failure, "Failed to load drafts")
@@ -48,7 +54,7 @@ class IncidentListViewModel @Inject constructor(
     }
 
     fun deleteDraft(id: String) = viewModelScope.launch {
-        if (drafts.delete(id) is Result.Error) {
+        if (withContext(dispatcher) { drafts.delete(id) } is Result.Error) {
             _state.update { it.copy(draftError = "Could not delete this draft. Try again.") }
         }
     }
@@ -57,7 +63,7 @@ class IncidentListViewModel @Inject constructor(
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
             _state.update { it.copy(loading = true, refreshing = fromPull, error = null) }
-            when (val result = repository.list()) {
+            when (val result = withContext(dispatcher) { repository.list() }) {
                 is Result.Success -> _state.update { it.copy(incidents = result.data, loading = false, refreshing = false) }
                 is Result.Error -> _state.update { it.copy(loading = false, refreshing = false, error = result.message) }
             }

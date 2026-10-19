@@ -33,7 +33,7 @@ class IncidentListViewModelTest {
         val drafts = FakeDraftReports()
         drafts.save(ReportInput("Pipe", "Leaking", Severity.HIGH, "A", emptyList(), clientRequestId = "draft-1"), DraftState.DRAFT)
         val repository = FakeIncidentRepository().apply { listResult = { throw IOException("offline") } }
-        val viewModel = IncidentListViewModel(repository, drafts)
+        val viewModel = IncidentListViewModel(repository, drafts, dispatcher)
         viewModel.refresh()
         advanceUntilIdle()
 
@@ -43,7 +43,7 @@ class IncidentListViewModelTest {
 
     @Test fun draftLoadFailureShowsDraftErrorAndKeepsServerList() = runTest(dispatcher) {
         val drafts = FakeDraftReports().apply { observeFailure = IOException("database unavailable") }
-        val viewModel = IncidentListViewModel(FakeIncidentRepository(), drafts)
+        val viewModel = IncidentListViewModel(FakeIncidentRepository(), drafts, dispatcher)
         viewModel.refresh()
         advanceUntilIdle()
 
@@ -55,7 +55,7 @@ class IncidentListViewModelTest {
         val drafts = FakeDraftReports()
         drafts.save(ReportInput("Pipe", "Leaking", Severity.HIGH, "A", emptyList(), clientRequestId = "draft-1"), DraftState.DRAFT)
         val repository = FakeIncidentRepository()
-        val viewModel = IncidentListViewModel(repository, drafts)
+        val viewModel = IncidentListViewModel(repository, drafts, dispatcher)
         viewModel.refresh()
         advanceUntilIdle()
 
