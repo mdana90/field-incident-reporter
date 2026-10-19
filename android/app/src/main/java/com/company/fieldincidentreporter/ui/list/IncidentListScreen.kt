@@ -37,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -45,11 +44,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import com.company.fieldincidentreporter.model.Incident
 import com.company.fieldincidentreporter.data.offline.DraftState
 import com.company.fieldincidentreporter.data.offline.DraftReport
 import com.company.fieldincidentreporter.ui.imageUrl
-import com.company.fieldincidentreporter.ui.incidentLocalDate
+import com.company.fieldincidentreporter.ui.label
 import com.company.fieldincidentreporter.ui.theme.Amber
 import com.company.fieldincidentreporter.ui.theme.TealSoft
 
@@ -96,10 +94,10 @@ fun IncidentListScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 when {
-                    state.loading && !state.refreshing && state.incidents.isEmpty() && state.drafts.isEmpty() -> item {
+                    state.loading && !state.refreshing && state.isEmpty -> item {
                         Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     }
-                    state.error != null && state.incidents.isEmpty() && state.drafts.isEmpty() -> item {
+                    state.error != null && state.isEmpty -> item {
                         Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
                                 Text(state.error.orEmpty())
@@ -108,7 +106,7 @@ fun IncidentListScreen(
                             }
                         }
                     }
-                    state.incidents.isEmpty() && state.drafts.isEmpty() -> item {
+                    state.isEmpty -> item {
                         Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
                                 Text("No reports yet", style = MaterialTheme.typography.headlineSmall)
@@ -144,8 +142,8 @@ fun IncidentListScreen(
                             }
                         }
                         item { Text("Submitted incidents", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
-                        items(state.incidents, key = Incident::id) { incident ->
-                            IncidentCard(incident = incident, onClick = { onOpen(incident.id) })
+                        items(state.incidents, key = { it.incident.id }) { item ->
+                            IncidentCard(item = item, onClick = { onOpen(item.incident.id) })
                         }
                     }
                 }
@@ -179,8 +177,8 @@ private fun DraftCard(report: DraftReport, onOpen: () -> Unit, onDelete: () -> U
 }
 
 @Composable
-private fun IncidentCard(incident: Incident, onClick: () -> Unit) {
-    val context = LocalContext.current
+private fun IncidentCard(item: IncidentListItem, onClick: () -> Unit) {
+    val incident = item.incident
     Card(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
@@ -200,18 +198,18 @@ private fun IncidentCard(incident: Incident, onClick: () -> Unit) {
             Spacer(Modifier.height(7.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    incident.status.name.replace('_', ' ').lowercase().replaceFirstChar(Char::uppercase),
+                    incident.status.label,
                     color = Amber,
                     modifier = Modifier.padding(end = 10.dp),
                     style = MaterialTheme.typography.labelMedium,
                 )
                 Text(
-                    "${incident.severity.name.lowercase().replaceFirstChar(Char::uppercase)} severity",
+                    "${incident.severity.label} severity",
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.labelMedium,
                 )
                 Spacer(Modifier.width(10.dp))
-                Text(incidentLocalDate(incident.createdAt, context), style = MaterialTheme.typography.labelSmall)
+                Text(item.reportedOn, style = MaterialTheme.typography.labelSmall)
             }
             Spacer(Modifier.height(7.dp))
             Text("⌖  ${incident.location}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)

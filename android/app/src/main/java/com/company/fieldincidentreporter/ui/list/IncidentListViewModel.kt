@@ -8,6 +8,7 @@ import com.company.fieldincidentreporter.data.offline.DraftReports
 import com.company.fieldincidentreporter.di.IoDispatcher
 import com.company.fieldincidentreporter.model.Incident
 import com.company.fieldincidentreporter.model.Result
+import com.company.fieldincidentreporter.ui.incidentLocalDate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
@@ -23,14 +24,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 
+/** An incident with its local date already formatted, so list rows do not re-parse it on every recomposition. */
+data class IncidentListItem(val incident: Incident, val reportedOn: String)
+
 data class ListUiState(
-    val incidents: List<Incident> = emptyList(),
+    val incidents: List<IncidentListItem> = emptyList(),
     val drafts: List<DraftReport> = emptyList(),
     val loading: Boolean = true,
     val refreshing: Boolean = false,
     val error: String? = null,
     val draftError: String? = null,
-)
+) {
+    val isEmpty: Boolean get() = incidents.isEmpty() && drafts.isEmpty()
+}
 
 @HiltViewModel
 class IncidentListViewModel @Inject constructor(
@@ -64,7 +70,10 @@ class IncidentListViewModel @Inject constructor(
         refreshJob = viewModelScope.launch {
             _state.update { it.copy(loading = true, refreshing = fromPull, error = null) }
             when (val result = withContext(dispatcher) { repository.list() }) {
-                is Result.Success -> _state.update { it.copy(incidents = result.data, loading = false, refreshing = false) }
+                is Result.Success -> {
+                    val incidents = result.data.map { incident -> IncidentListItem(incident, incidentLocalDate(incident.createdAt)) }
+                    _state.update { it.copy(incidents = incidents, loading = false, refreshing = false) }
+                }
                 is Result.Error -> _state.update { it.copy(loading = false, refreshing = false, error = result.message) }
             }
         }

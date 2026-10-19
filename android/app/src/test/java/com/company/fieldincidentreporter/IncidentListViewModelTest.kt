@@ -1,9 +1,12 @@
 package com.company.fieldincidentreporter
 
 import com.company.fieldincidentreporter.data.ReportInput
+import com.company.fieldincidentreporter.data.offline.DraftReport
 import com.company.fieldincidentreporter.data.offline.DraftState
 import com.company.fieldincidentreporter.model.Severity
+import com.company.fieldincidentreporter.ui.incidentLocalDate
 import com.company.fieldincidentreporter.ui.list.IncidentListViewModel
+import com.company.fieldincidentreporter.ui.list.ListUiState
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -50,7 +53,7 @@ class IncidentListViewModelTest {
         advanceUntilIdle()
 
         assertNotNull(viewModel.state.value.draftError)
-        assertEquals("incident-1", viewModel.state.value.incidents.single().id)
+        assertEquals("incident-1", viewModel.state.value.incidents.single().incident.id)
     }
 
     @Test fun pullRefreshKeepsVisibleReportsAndNeverSendsDrafts() = runTest(dispatcher) {
@@ -67,7 +70,7 @@ class IncidentListViewModelTest {
         runCurrent()
 
         assertTrue(viewModel.state.value.refreshing)
-        assertEquals("incident-1", viewModel.state.value.incidents.single().id)
+        assertEquals("incident-1", viewModel.state.value.incidents.single().incident.id)
         assertEquals("draft-1", viewModel.state.value.drafts.single().id)
         assertTrue(repository.creates.isEmpty())
 
@@ -75,7 +78,7 @@ class IncidentListViewModelTest {
         advanceUntilIdle()
         assertFalse(viewModel.state.value.refreshing)
         assertNotNull(viewModel.state.value.error)
-        assertEquals("incident-1", viewModel.state.value.incidents.single().id)
+        assertEquals("incident-1", viewModel.state.value.incidents.single().incident.id)
         assertEquals("draft-1", viewModel.state.value.drafts.single().id)
     }
 
@@ -108,5 +111,28 @@ class IncidentListViewModelTest {
 
         assertEquals("draft-1", viewModel.state.value.drafts.single().id)
         assertEquals("Could not delete this draft. Try again.", viewModel.state.value.draftError)
+    }
+
+    @Test fun loadedIncidentsCarryTheirFormattedDate() = runTest(dispatcher) {
+        val viewModel = IncidentListViewModel(FakeIncidentRepository(), FakeDraftReports(), io)
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        val item = viewModel.state.value.incidents.single()
+        assertEquals(incidentLocalDate(testIncident().createdAt), item.reportedOn)
+        assertFalse(viewModel.state.value.isEmpty)
+    }
+
+    @Test fun isEmptyOnlyWithoutIncidentsAndDrafts() = runTest(dispatcher) {
+        val draft = DraftReport(
+            "draft-1", ReportInput("Pipe", "Leaking", Severity.HIGH, "A", emptyList(), clientRequestId = "draft-1"), DraftState.DRAFT, 1L,
+        )
+        assertTrue(ListUiState().isEmpty)
+        assertFalse(ListUiState(drafts = listOf(draft)).isEmpty)
+
+        val viewModel = IncidentListViewModel(FakeIncidentRepository().apply { listResult = { emptyList() } }, FakeDraftReports(), io)
+        viewModel.refresh()
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.isEmpty)
     }
 }

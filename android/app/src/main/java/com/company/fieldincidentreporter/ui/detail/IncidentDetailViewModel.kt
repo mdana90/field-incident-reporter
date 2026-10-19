@@ -7,6 +7,7 @@ import com.company.fieldincidentreporter.data.IncidentRepository
 import com.company.fieldincidentreporter.di.IoDispatcher
 import com.company.fieldincidentreporter.model.Incident
 import com.company.fieldincidentreporter.model.Result
+import com.company.fieldincidentreporter.ui.incidentLocalDate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
@@ -19,6 +20,8 @@ import kotlinx.coroutines.withContext
 
 data class DetailUiState(
     val incident: Incident? = null,
+    /** [Incident.createdAt] as a local date, formatted once per load instead of on every recomposition. */
+    val reportedOn: String = "",
     val loading: Boolean = true,
     val deleting: Boolean = false,
     val deleted: Boolean = false,
@@ -42,7 +45,10 @@ class IncidentDetailViewModel @Inject constructor(
         refreshJob = viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
             when (val result = withContext(dispatcher) { repository.get(id) }) {
-                is Result.Success -> _state.update { it.copy(incident = result.data, loading = false) }
+                is Result.Success -> {
+                    val reportedOn = incidentLocalDate(result.data.createdAt)
+                    _state.update { it.copy(incident = result.data, reportedOn = reportedOn, loading = false) }
+                }
                 is Result.Error -> _state.update { it.copy(loading = false, error = result.message) }
             }
         }

@@ -51,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.company.fieldincidentreporter.model.Severity
 import com.company.fieldincidentreporter.ui.imageUrl
+import com.company.fieldincidentreporter.ui.label
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -188,7 +189,7 @@ fun IncidentFormScreen(
 
                 ExposedDropdownMenuBox(expanded = severityOpen, onExpandedChange = { if (state.editable) severityOpen = it }) {
                     OutlinedTextField(
-                        value = state.severity?.name?.lowercase()?.replaceFirstChar(Char::uppercase).orEmpty(),
+                        value = state.severity?.label.orEmpty(),
                         onValueChange = {}, readOnly = true,
                         enabled = state.editable,
                         label = { Text("Severity *") },
@@ -199,7 +200,7 @@ fun IncidentFormScreen(
                     ExposedDropdownMenu(expanded = severityOpen, onDismissRequest = { severityOpen = false }) {
                         Severity.entries.forEach { severity ->
                             DropdownMenuItem(
-                                text = { Text(severity.name.lowercase().replaceFirstChar(Char::uppercase)) },
+                                text = { Text(severity.label) },
                                 onClick = { viewModel.severity(severity); severityOpen = false },
                             )
                         }

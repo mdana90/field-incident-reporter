@@ -33,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -43,7 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.company.fieldincidentreporter.model.Incident
 import com.company.fieldincidentreporter.ui.imageUrl
-import com.company.fieldincidentreporter.ui.incidentLocalDate
+import com.company.fieldincidentreporter.ui.label
 import com.company.fieldincidentreporter.ui.theme.Amber
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,6 +104,7 @@ fun IncidentDetailScreen(
             }
             else -> DetailContent(
                 incident = requireNotNull(state.incident),
+                reportedOn = state.reportedOn,
                 error = state.error,
                 onRetry = viewModel::refresh,
                 modifier = Modifier.padding(padding),
@@ -114,8 +114,7 @@ fun IncidentDetailScreen(
 }
 
 @Composable
-private fun DetailContent(incident: Incident, error: String?, onRetry: () -> Unit, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
+private fun DetailContent(incident: Incident, reportedOn: String, error: String?, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     androidx.compose.foundation.lazy.LazyColumn(modifier = modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -136,12 +135,12 @@ private fun DetailContent(incident: Incident, error: String?, onRetry: () -> Uni
                     TextButton(onClick = onRetry) { Text("Retry") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(incident.status.name.replace('_', ' ').lowercase().replaceFirstChar(Char::uppercase), color = Amber)
-                    Text("${incident.severity.name.lowercase().replaceFirstChar(Char::uppercase)} severity", color = MaterialTheme.colorScheme.primary)
+                    Text(incident.status.label, color = Amber)
+                    Text("${incident.severity.label} severity", color = MaterialTheme.colorScheme.primary)
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(incident.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text("Reported ${incidentLocalDate(incident.createdAt, context)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Reported $reportedOn", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(24.dp))
                 Text("LOCATION", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(6.dp))

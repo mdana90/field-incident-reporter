@@ -3,6 +3,7 @@ package com.company.fieldincidentreporter
 import androidx.lifecycle.SavedStateHandle
 import com.company.fieldincidentreporter.ui.detail.IncidentDetailViewModel
 import com.company.fieldincidentreporter.ui.detail.IncidentDetailViewModel.Companion.KEY_ID
+import com.company.fieldincidentreporter.ui.incidentLocalDate
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,6 +38,7 @@ class IncidentDetailViewModelTest {
         advanceUntilIdle()
 
         assertEquals("incident-7", viewModel.state.value.incident?.id)
+        assertEquals(incidentLocalDate(testIncident().createdAt), viewModel.state.value.reportedOn)
         assertFalse(viewModel.state.value.loading)
         assertEquals(setOf(io), repository.dispatchers)
     }
