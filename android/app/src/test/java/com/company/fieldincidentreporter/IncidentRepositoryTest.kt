@@ -36,6 +36,7 @@ class IncidentRepositoryTest {
                 location = "Building A", newPhotos = listOf(photo), clientRequestId = "same-id",
             ))
             assertEquals("abc", (saved as Result.Success).data.id)
+            assertEquals(BuildConfig.API_BASE_URL.trimEnd('/') + "/uploads/p1.jpg", saved.data.photos.single().url)
             val request = server.takeRequest()
             assertEquals("POST", request.method)
             val body = request.body.readUtf8()

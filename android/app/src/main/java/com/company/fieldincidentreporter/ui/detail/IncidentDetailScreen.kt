@@ -41,7 +41,6 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.company.fieldincidentreporter.model.Incident
-import com.company.fieldincidentreporter.ui.imageUrl
 import com.company.fieldincidentreporter.ui.label
 import com.company.fieldincidentreporter.ui.theme.Amber
 
@@ -120,7 +119,7 @@ private fun DetailContent(incident: Incident, reportedOn: String, error: String?
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(incident.photos, key = { it.id }) { photo ->
                     AsyncImage(
-                        model = imageUrl(photo.url),
+                        model = photo.url,
                         contentDescription = "Photo of ${incident.title}",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.width(320.dp).height(220.dp),

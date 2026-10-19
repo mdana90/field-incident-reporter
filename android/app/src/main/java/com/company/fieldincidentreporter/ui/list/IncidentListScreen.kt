@@ -46,7 +46,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.company.fieldincidentreporter.data.offline.DraftState
 import com.company.fieldincidentreporter.data.offline.DraftReport
-import com.company.fieldincidentreporter.ui.imageUrl
 import com.company.fieldincidentreporter.ui.label
 import com.company.fieldincidentreporter.ui.theme.Amber
 import com.company.fieldincidentreporter.ui.theme.TealSoft
@@ -187,7 +186,7 @@ private fun IncidentCard(item: IncidentListItem, onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         AsyncImage(
-            model = incident.photos.firstOrNull()?.url?.let(::imageUrl),
+            model = incident.photos.firstOrNull()?.url,
             contentDescription = "Photo of ${incident.title}",
             modifier = Modifier.fillMaxWidth().height(150.dp),
             contentScale = ContentScale.Crop,

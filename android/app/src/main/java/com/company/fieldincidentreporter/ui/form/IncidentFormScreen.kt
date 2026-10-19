@@ -50,7 +50,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.company.fieldincidentreporter.model.Severity
-import com.company.fieldincidentreporter.ui.imageUrl
 import com.company.fieldincidentreporter.ui.label
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -146,7 +145,7 @@ fun IncidentFormScreen(
                         items(state.photos, key = FormPhoto::key) { photo ->
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 AsyncImage(
-                                    model = photo.localFile ?: photo.url?.let(::imageUrl),
+                                    model = photo.localFile ?: photo.url,
                                     contentDescription = "Selected incident photo",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.width(100.dp).height(90.dp),

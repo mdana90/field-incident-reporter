@@ -1,5 +1,6 @@
 package com.company.fieldincidentreporter.data
 
+import com.company.fieldincidentreporter.BuildConfig
 import com.company.fieldincidentreporter.model.Incident
 import com.company.fieldincidentreporter.model.Photo
 import com.company.fieldincidentreporter.model.Severity
@@ -29,7 +30,11 @@ fun IncidentDto.toModel() = Incident(
     severity = Severity.valueOf(severity),
     location = location,
     status = Status.valueOf(status),
-    photos = photos.map { Photo(it.id, it.url) },
+    photos = photos.map { Photo(it.id, photoUrl(it.url)) },
     createdAt = createdAt,
     updatedAt = updatedAt,
 )
+
+/** The server sends photo paths relative to the API, so resolve them here and screens get a URL they can load. */
+private fun photoUrl(path: String): String = BuildConfig.API_BASE_URL.trimEnd('/') +
+    (if (path.startsWith('/')) path else "/$path")
