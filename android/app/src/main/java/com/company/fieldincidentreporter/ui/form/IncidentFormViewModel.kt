@@ -65,11 +65,13 @@ data class FormUiState(
     val sendUnconfirmed: Boolean = false,
     val unconfirmed: Boolean = false,
     val hasSavedDraft: Boolean = false,
+    val importingPhotos: Int = 0,
 ) {
     /** Fields and photos accept changes only once loaded, while nothing is saving and the draft is not locked by an unconfirmed send. */
     val editable: Boolean get() = !saving && !loading && !loadError && !unconfirmed
     val hasPhotoSlots: Boolean get() = photos.size < MAX_PHOTOS
-    val canSubmit: Boolean get() = !saving && !loading && !loadError
+    /** Waits for photo imports so a quick tap cannot submit without the photo just picked. */
+    val canSubmit: Boolean get() = !saving && !loading && !loadError && importingPhotos == 0
 }
 
 const val MAX_PHOTOS = 3
@@ -142,7 +144,7 @@ class IncidentFormViewModel @Inject constructor(
             deleteInBackground { photoStorage.deletePhoto(file) }
             return
         }
-        viewModelScope.launch {
+        launchImport {
             when (val result = withContext(dispatcher) { photoStorage.acceptCameraPhoto(requestId, file) }) {
                 is Result.Success -> addLocalPhoto(result.data)
                 is Result.Error -> {
@@ -254,10 +256,21 @@ class IncidentFormViewModel @Inject constructor(
     }
 
     private fun addPhoto(uri: Uri) {
-        viewModelScope.launch {
+        launchImport {
             when (val result = withContext(dispatcher) { photoStorage.copyPickedPhoto(requestId, uri) }) {
                 is Result.Success -> addLocalPhoto(result.data)
                 is Result.Error -> _state.update { it.copy(error = result.message) }
+            }
+        }
+    }
+
+    private fun launchImport(import: suspend () -> Unit) {
+        _state.update { it.copy(importingPhotos = it.importingPhotos + 1) }
+        viewModelScope.launch {
+            try {
+                import()
+            } finally {
+                _state.update { it.copy(importingPhotos = it.importingPhotos - 1) }
             }
         }
     }
@@ -282,7 +295,7 @@ class IncidentFormViewModel @Inject constructor(
 
     private fun submit(send: Boolean) {
         val current = _state.value
-        if (current.saving || current.loading || current.loadError || current.savedId != null || current.draftSaved || current.sendUnconfirmed) return
+        if (!current.canSubmit || current.savedId != null || current.draftSaved || current.sendUnconfirmed) return
         if (current.unconfirmed && !send) return
         val errors = validateReport(current.title, current.description, current.severity, current.location, current.photos.size)
         if (errors.isNotEmpty()) {

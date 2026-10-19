@@ -378,6 +378,26 @@ class IncidentFormViewModelTest {
         assertFalse(form.state.value.hasPhotoSlots)
     }
 
+    @Test fun sendWaitsForPhotoImport() = runTest(dispatcher) {
+        val repository = FakeIncidentRepository()
+        photoStore.pickedPhoto = { photo("picked.jpg") }
+        val form = viewModel(draftHandle(), repository)
+        runCurrent()
+        assertTrue(form.state.value.canSubmit)
+
+        form.addPhotos(listOf(mockk()))
+        assertFalse(form.state.value.canSubmit)
+        form.sendReport()
+        advanceUntilIdle()
+        assertTrue(repository.creates.isEmpty())
+        assertEquals(2, form.state.value.photos.size)
+        assertTrue(form.state.value.canSubmit)
+
+        form.sendReport()
+        advanceUntilIdle()
+        assertEquals(2, repository.creates.single().newPhotos.size)
+    }
+
     @Test fun pickedPhotosAreIgnoredWhileDraftIsLocked() = runTest(dispatcher) {
         val drafts = FakeDraftReports()
         drafts.save(input(listOf(photo("locked.jpg"))), DraftState.UNCONFIRMED)
